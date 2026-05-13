@@ -46,6 +46,32 @@ public class ProductCostComponent {
     @Column(name = "component_name", nullable = false, length = 120)
     private String componentName;
 
+    @Column(name = "specification", length = 160)
+    private String specification;
+
+    @Column(name = "specification_quantity", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal specificationQuantity = BigDecimal.ZERO;
+
+    @Column(name = "specification_unit", length = 80)
+    private String specificationUnit;
+
+    @Column(name = "unit_price", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal unitPrice = BigDecimal.ZERO;
+
+    @Column(name = "quantity", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal quantity = BigDecimal.ZERO;
+
+    @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal totalAmount = BigDecimal.ZERO;
+
+    @Column(name = "production_quantity", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal productionQuantity = BigDecimal.ZERO;
+
     @Column(name = "amount", nullable = false, precision = 12, scale = 2)
     @Builder.Default
     private BigDecimal amount = BigDecimal.ZERO;

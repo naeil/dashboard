@@ -1,6 +1,7 @@
 package naeil.dashboard.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
@@ -110,26 +111,33 @@ public class ProductService {
                 .collect(Collectors.toMap(Shop::getId, Function.identity()));
 
         List<ProductCostViewDTO> products = costItems.stream()
-                .map(item -> new ProductCostViewDTO(
-                        item.getProductId(),
-                        item.getBrandId(),
-                        item.getBrandName(),
-                        item.getProductName(),
-                        item.getSkuCd(),
-                        item.getProdNo(),
-                        normalizeMoney(item.getSalePrice()),
-                        normalizeMoney(item.getCostPrice()),
-                        normalizeMoney(item.getSupplyPrice()),
-                        normalizeMoney(item.getSgnaCost()),
-                        normalizeMoney(item.getLogisticsCost()),
-                        normalizeMoney(item.getPackagingCost()),
-                        normalizeMoney(item.getOtherCost()),
-                        item.getRealStock(),
-                        item.getSafeStock(),
-                        outboundByProduct.getOrDefault(item.getProductId(), 0),
-                        mapCostComponents(costComponentsByProduct.get(item.getProductId())),
-                        mapChannelCosts(channelCostsByProduct.get(item.getProductId()), shopById)
-                ))
+                .map(item -> {
+                    List<ProductCostComponent> components = costComponentsByProduct.get(item.getProductId());
+                    BigDecimal effectiveCostPrice = components == null || components.isEmpty()
+                            ? normalizeMoney(item.getCostPrice())
+                            : sumCostComponents(components);
+
+                    return new ProductCostViewDTO(
+                            item.getProductId(),
+                            item.getBrandId(),
+                            item.getBrandName(),
+                            item.getProductName(),
+                            item.getSkuCd(),
+                            item.getProdNo(),
+                            normalizeMoney(item.getSalePrice()),
+                            effectiveCostPrice,
+                            normalizeMoney(item.getSupplyPrice()),
+                            normalizeMoney(item.getSgnaCost()),
+                            normalizeMoney(item.getLogisticsCost()),
+                            normalizeMoney(item.getPackagingCost()),
+                            normalizeMoney(item.getOtherCost()),
+                            item.getRealStock(),
+                            item.getSafeStock(),
+                            outboundByProduct.getOrDefault(item.getProductId(), 0),
+                            mapCostComponents(components),
+                            mapChannelCosts(channelCostsByProduct.get(item.getProductId()), shopById)
+                    );
+                })
                 .toList();
 
         return new ProductCostManagementResponseDTO(shopOptions, products);
@@ -246,6 +254,13 @@ public class ProductService {
                         .thenComparing(ProductCostComponent::getId))
                 .map(component -> new ProductCostComponentViewDTO(
                         component.getComponentName(),
+                        component.getSpecification(),
+                        normalizeNumber(component.getSpecificationQuantity()),
+                        component.getSpecificationUnit(),
+                        normalizeMoney(component.getUnitPrice()),
+                        normalizeNumber(component.getQuantity()),
+                        normalizeMoney(component.getTotalAmount()),
+                        normalizeNumber(component.getProductionQuantity()),
                         normalizeMoney(component.getAmount()),
                         component.getSortOrder()
                 ))
@@ -268,20 +283,57 @@ public class ProductService {
                 continue;
             }
 
-            String componentName = request.componentName() == null ? "" : request.componentName().trim();
-            if (componentName.isBlank()) {
+            if (!hasAnyCostComponentData(request)) {
                 continue;
             }
+
+            validateCostComponentRequest(request, index);
+
+            String componentName = request.componentName().trim();
 
             normalized.add(ProductCostComponent.builder()
                     .companyId(companyId)
                     .productId(productId)
                     .componentName(componentName)
-                    .amount(normalizeMoney(request.amount()))
+                    .specification(buildSpecification(request))
+                    .specificationQuantity(resolveSpecificationQuantity(request))
+                    .specificationUnit(resolveSpecificationUnit(request))
+                    .unitPrice(normalizeMoney(request.unitPrice()))
+                    .quantity(normalizeNumber(request.quantity()))
+                    .totalAmount(resolveTotalAmount(request))
+                    .productionQuantity(normalizeNumber(request.productionQuantity()))
+                    .amount(resolveUnitCost(request))
                     .sortOrder(request.sortOrder() == null ? index : Math.max(request.sortOrder(), 0))
                     .build());
         }
         return normalized;
+    }
+
+    private boolean hasAnyCostComponentData(ProductCostComponentUpdateRequest request) {
+        if (request == null) {
+            return false;
+        }
+
+        return normalizeText(request.componentName()) != null
+                || normalizeText(request.specificationUnit()) != null
+                || normalizeText(request.specification()) != null
+                || normalizeNumber(request.specificationQuantity()).compareTo(BigDecimal.ZERO) > 0
+                || normalizeMoney(request.unitPrice()).compareTo(BigDecimal.ZERO) > 0
+                || normalizeNumber(request.quantity()).compareTo(BigDecimal.ZERO) > 0
+                || normalizeNumber(request.productionQuantity()).compareTo(BigDecimal.ZERO) > 0
+                || normalizeMoney(request.amount()).compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    private void validateCostComponentRequest(ProductCostComponentUpdateRequest request, int index) {
+        if (normalizeText(request.componentName()) == null
+                || resolveSpecificationQuantity(request).compareTo(BigDecimal.ZERO) <= 0
+                || resolveSpecificationUnit(request) == null
+                || normalizeMoney(request.unitPrice()).compareTo(BigDecimal.ZERO) <= 0
+                || normalizeNumber(request.quantity()).compareTo(BigDecimal.ZERO) <= 0
+                || normalizeNumber(request.productionQuantity()).compareTo(BigDecimal.ZERO) <= 0
+                || resolveUnitCost(request).compareTo(BigDecimal.ZERO) <= 0) {
+            throw new CustomException(400, "원가 상세 " + (index + 1) + "행의 필수값이 비어 있습니다.");
+        }
     }
 
     private BigDecimal sumCostComponents(List<ProductCostComponent> components) {
@@ -291,8 +343,118 @@ public class ProductService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    private BigDecimal resolveTotalAmount(ProductCostComponentUpdateRequest request) {
+        BigDecimal unitPrice = normalizeMoney(request.unitPrice());
+        BigDecimal quantity = normalizeNumber(request.quantity());
+        BigDecimal computed = unitPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP);
+        if (computed.compareTo(BigDecimal.ZERO) > 0) {
+            return computed;
+        }
+        return normalizeMoney(request.totalAmount());
+    }
+
+    private BigDecimal resolveSpecificationQuantity(ProductCostComponentUpdateRequest request) {
+        BigDecimal explicitQuantity = normalizeNumber(request.specificationQuantity());
+        if (explicitQuantity.compareTo(BigDecimal.ZERO) > 0) {
+            return explicitQuantity;
+        }
+        return extractSpecificationQuantity(request.specification());
+    }
+
+    private String resolveSpecificationUnit(ProductCostComponentUpdateRequest request) {
+        String explicitUnit = normalizeText(request.specificationUnit());
+        if (explicitUnit != null) {
+            return explicitUnit;
+        }
+        return extractSpecificationUnit(request.specification());
+    }
+
+    private String buildSpecification(ProductCostComponentUpdateRequest request) {
+        BigDecimal specificationQuantity = resolveSpecificationQuantity(request);
+        String specificationUnit = resolveSpecificationUnit(request);
+
+        String quantityText = specificationQuantity.compareTo(BigDecimal.ZERO) > 0
+                ? specificationQuantity.stripTrailingZeros().toPlainString()
+                : "";
+        if (quantityText.isBlank() && specificationUnit == null) {
+            return normalizeText(request.specification());
+        }
+        if (quantityText.isBlank()) {
+            return specificationUnit;
+        }
+        if (specificationUnit == null) {
+            return quantityText;
+        }
+        return quantityText + specificationUnit;
+    }
+
+    private BigDecimal extractSpecificationQuantity(String specification) {
+        String raw = specification == null ? "" : specification.trim();
+        if (raw.isBlank()) {
+            return BigDecimal.ZERO;
+        }
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("^(\\d+(?:\\.\\d+)?)\\s*(.*)$")
+                .matcher(raw);
+        if (!matcher.matches()) {
+            return BigDecimal.ZERO;
+        }
+
+        try {
+            return normalizeNumber(new BigDecimal(matcher.group(1)));
+        } catch (NumberFormatException exception) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private String extractSpecificationUnit(String specification) {
+        String raw = specification == null ? "" : specification.trim();
+        if (raw.isBlank()) {
+            return null;
+        }
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("^(\\d+(?:\\.\\d+)?)\\s*(.*)$")
+                .matcher(raw);
+        if (!matcher.matches()) {
+            return raw;
+        }
+
+        return normalizeText(matcher.group(2));
+    }
+
+    private BigDecimal resolveUnitCost(ProductCostComponentUpdateRequest request) {
+        BigDecimal explicitAmount = normalizeMoney(request.amount());
+        BigDecimal totalAmount = resolveTotalAmount(request);
+        BigDecimal productionQuantity = normalizeNumber(request.productionQuantity());
+        BigDecimal autoComputedAmount = totalAmount.compareTo(BigDecimal.ZERO) > 0 && productionQuantity.compareTo(BigDecimal.ZERO) > 0
+                ? totalAmount.divide(productionQuantity, 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        if (explicitAmount.compareTo(BigDecimal.ZERO) > 0) {
+            return explicitAmount;
+        }
+        if (autoComputedAmount.compareTo(BigDecimal.ZERO) > 0) {
+            return autoComputedAmount;
+        }
+        return totalAmount;
+    }
+
     private BigDecimal normalizeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value.max(BigDecimal.ZERO);
+    }
+
+    private BigDecimal normalizeNumber(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value.max(BigDecimal.ZERO);
+    }
+
+    private String normalizeText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isBlank() ? null : normalized;
     }
 
     private String normalizeChannelFeeType(String value) {

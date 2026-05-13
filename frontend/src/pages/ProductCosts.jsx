@@ -6,9 +6,13 @@ import {
   updateProductCosts,
 } from '../api/salesApi'
 
+const DECIMAL_INPUT_REGEX = /^\d*(\.\d{0,2})?$/
+const DEFAULT_SPEC_UNIT_OPTIONS = ['ea', 'box', '롤', '도', 'kg', 'g', 'ml', 'L', 'set']
+
 function toInputValue(value) {
   const numericValue = Number(value ?? 0)
-  return Number.isFinite(numericValue) ? String(numericValue) : '0'
+  if (!Number.isFinite(numericValue)) return '0'
+  return String(Math.round(numericValue * 100) / 100)
 }
 
 function normalizeDraftNumber(value) {
@@ -19,20 +23,125 @@ function normalizeDraftNumber(value) {
 function createEmptyCostComponent(sortOrder = 0) {
   return {
     componentName: '',
+    specificationQuantity: '',
+    specificationUnit: '',
+    unitPrice: '0',
+    quantity: '0',
+    totalAmount: '0',
+    productionQuantity: '0',
     amount: '0',
     sortOrder,
   }
 }
 
-function hasNamedCostComponent(components = []) {
-  return components.some((component) => String(component?.componentName || '').trim().length > 0)
+function isMeaningfulCostComponent(component = {}) {
+  const componentName = String(component?.componentName || '').trim()
+  const specificationQuantity = String(component?.specificationQuantity || '').trim()
+  const specificationUnit = String(component?.specificationUnit || '').trim()
+
+  return (
+    componentName.length > 0 ||
+    specificationQuantity.length > 0 ||
+    specificationUnit.length > 0 ||
+    normalizeDraftNumber(component?.unitPrice) > 0 ||
+    normalizeDraftNumber(component?.quantity) > 0 ||
+    normalizeDraftNumber(component?.productionQuantity) > 0 ||
+    normalizeDraftNumber(component?.amount) > 0
+  )
+}
+
+function hasMeaningfulCostComponent(components = []) {
+  return components.some((component) => isMeaningfulCostComponent(component))
+}
+
+function isCompleteCostComponent(component = {}) {
+  return (
+    String(component?.componentName || '').trim().length > 0 &&
+    normalizeDraftNumber(component?.specificationQuantity) > 0 &&
+    String(component?.specificationUnit || '').trim().length > 0 &&
+    normalizeDraftNumber(component?.unitPrice) > 0 &&
+    normalizeDraftNumber(component?.quantity) > 0 &&
+    normalizeDraftNumber(component?.productionQuantity) > 0 &&
+    normalizeDraftNumber(component?.amount) > 0
+  )
 }
 
 function getCostComponentTotal(components = []) {
   return components.reduce((sum, component) => {
-    if (!String(component?.componentName || '').trim()) return sum
+    if (!isMeaningfulCostComponent(component)) return sum
     return sum + normalizeDraftNumber(component?.amount)
   }, 0)
+}
+
+function getCostComponentBatchTotal(components = []) {
+  return components.reduce((sum, component) => {
+    if (!isMeaningfulCostComponent(component)) return sum
+    return sum + normalizeDraftNumber(component?.totalAmount)
+  }, 0)
+}
+
+function getComputedTotalAmount(component = {}) {
+  return normalizeDraftNumber(component.unitPrice) * normalizeDraftNumber(component.quantity)
+}
+
+function getComputedUnitCost(component = {}) {
+  const productionQuantity = normalizeDraftNumber(component.productionQuantity)
+  if (productionQuantity <= 0) return 0
+  return getComputedTotalAmount(component) / productionQuantity
+}
+
+function getSpecificationUnitOptions(components = []) {
+  return [...new Set([
+    ...DEFAULT_SPEC_UNIT_OPTIONS,
+    ...components
+      .map((component) => String(component?.specificationUnit || '').trim())
+      .filter(Boolean),
+  ])]
+}
+
+function parseSpecification(specification) {
+  const raw = String(specification || '').trim()
+  if (!raw) {
+    return { specificationQuantity: '', specificationUnit: '' }
+  }
+
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(.*)$/)
+  if (!match) {
+    return { specificationQuantity: '', specificationUnit: raw }
+  }
+
+  return {
+    specificationQuantity: match[1] || '',
+    specificationUnit: (match[2] || '').trim(),
+  }
+}
+
+function buildSpecification(specificationQuantity, specificationUnit) {
+  const value = String(specificationQuantity || '').trim()
+  const unit = String(specificationUnit || '').trim()
+
+  if (!value && !unit) return ''
+  if (!value) return unit
+  if (!unit) return value
+  return `${value}${unit}`
+}
+
+function createComponentDraft(component = {}, index = 0) {
+  const parsedSpecification = parseSpecification(component.specification)
+  const specificationQuantity = component.specificationQuantity ?? parsedSpecification.specificationQuantity
+  const specificationUnit = component.specificationUnit ?? parsedSpecification.specificationUnit
+
+  return {
+    componentName: component.componentName || '',
+    specificationQuantity: specificationQuantity ? toInputValue(specificationQuantity) : '',
+    specificationUnit: specificationUnit || '',
+    unitPrice: toInputValue(component.unitPrice),
+    quantity: toInputValue(component.quantity),
+    totalAmount: toInputValue(component.totalAmount),
+    productionQuantity: toInputValue(component.productionQuantity),
+    amount: toInputValue(component.amount),
+    sortOrder: component.sortOrder ?? index,
+  }
 }
 
 function formatCurrency(value) {
@@ -271,11 +380,7 @@ export default function ProductCosts({ isExpanded }) {
             logisticsCost: toInputValue(product.logisticsCost),
             packagingCost: toInputValue(product.packagingCost),
             otherCost: toInputValue(product.otherCost),
-            costComponents: (product.costComponents || []).map((component, index) => ({
-              componentName: component.componentName || '',
-              amount: toInputValue(component.amount),
-              sortOrder: component.sortOrder ?? index,
-            })),
+            costComponents: (product.costComponents || []).map((component, index) => createComponentDraft(component, index)),
           },
         ])
       )
@@ -322,7 +427,7 @@ export default function ProductCosts({ isExpanded }) {
   }, [products, shops])
 
   const updateCommonDraft = (productId, field, value) => {
-    if (!/^\d*(\.\d{0,2})?$/.test(value)) return
+    if (!DECIMAL_INPUT_REGEX.test(value)) return
 
     setCommonDrafts((current) => ({
       ...current,
@@ -334,18 +439,33 @@ export default function ProductCosts({ isExpanded }) {
   }
 
   const updateCostComponentDraft = (productId, index, field, value) => {
-    if (field === 'amount' && !/^\d*(\.\d{0,2})?$/.test(value)) return
+    if (['specificationQuantity', 'unitPrice', 'quantity', 'productionQuantity', 'amount'].includes(field) && !DECIMAL_INPUT_REGEX.test(value)) return
 
     setCommonDrafts((current) => {
       const nextComponents = [...(current[productId]?.costComponents || [])]
       const existing = nextComponents[index] || createEmptyCostComponent(index)
-      nextComponents[index] = {
+      const previousAutoUnitCost = getComputedUnitCost(existing)
+      const nextComponent = {
         ...existing,
         [field]: value,
         sortOrder: index,
       }
+      const nextTotalAmount = getComputedTotalAmount(nextComponent)
+      nextComponent.totalAmount = toInputValue(nextTotalAmount)
 
-      const hasDetails = hasNamedCostComponent(nextComponents)
+      if (['unitPrice', 'quantity', 'productionQuantity'].includes(field)) {
+        const previousAmount = String(existing.amount ?? '').trim()
+        const previousAutoValue = toInputValue(previousAutoUnitCost)
+        const shouldSyncAmount = previousAmount === '' || previousAmount === '0' || previousAmount === previousAutoValue
+
+        if (shouldSyncAmount) {
+          nextComponent.amount = toInputValue(getComputedUnitCost(nextComponent))
+        }
+      }
+
+      nextComponents[index] = nextComponent
+
+      const hasDetails = hasMeaningfulCostComponent(nextComponents)
       return {
         ...current,
         [productId]: {
@@ -383,9 +503,10 @@ export default function ProductCosts({ isExpanded }) {
         .filter((_, currentIndex) => currentIndex !== index)
         .map((component, currentIndex) => ({
           ...component,
+          totalAmount: toInputValue(getComputedTotalAmount(component)),
           sortOrder: currentIndex,
         }))
-      const hasDetails = hasNamedCostComponent(nextComponents)
+      const hasDetails = hasMeaningfulCostComponent(nextComponents)
 
       return {
         ...current,
@@ -401,7 +522,7 @@ export default function ProductCosts({ isExpanded }) {
   }
 
   const updateChannelDraft = (productId, shopId, field, value) => {
-    if (field !== 'channelFeeType' && !/^\d*(\.\d{0,2})?$/.test(value)) return
+    if (field !== 'channelFeeType' && !DECIMAL_INPUT_REGEX.test(value)) return
 
     setChannelDrafts((current) => ({
       ...current,
@@ -419,6 +540,14 @@ export default function ProductCosts({ isExpanded }) {
     const draft = commonDrafts[productId]
     if (!draft) return
 
+    const meaningfulComponents = (draft.costComponents || []).filter((component) => isMeaningfulCostComponent(component))
+    const hasIncompleteComponent = meaningfulComponents.some((component) => !isCompleteCostComponent(component))
+
+    if (hasIncompleteComponent) {
+      window.alert('원가 상세 입력의 항목명, 규격 수량, 단위, 금액, 수량, 생산수량, 개당단가를 모두 입력해 주세요.')
+      return
+    }
+
     try {
       setSavingCommonProductId(productId)
       const response = await updateProductCosts(productId, companyId, {
@@ -432,6 +561,13 @@ export default function ProductCosts({ isExpanded }) {
         costComponents: (draft.costComponents || [])
           .map((component, index) => ({
             componentName: String(component.componentName || '').trim(),
+            specification: buildSpecification(component.specificationQuantity, component.specificationUnit),
+            specificationQuantity: normalizeDraftNumber(component.specificationQuantity),
+            specificationUnit: String(component.specificationUnit || '').trim(),
+            unitPrice: normalizeDraftNumber(component.unitPrice),
+            quantity: normalizeDraftNumber(component.quantity),
+            totalAmount: normalizeDraftNumber(component.totalAmount),
+            productionQuantity: normalizeDraftNumber(component.productionQuantity),
             amount: normalizeDraftNumber(component.amount),
             sortOrder: index,
           }))
@@ -590,8 +726,10 @@ export default function ProductCosts({ isExpanded }) {
               const isExpandedRow = Boolean(expandedProducts[product.productId])
               const isCostDetailExpanded = Boolean(expandedCostDetails[product.productId])
               const costComponents = draft.costComponents || []
-              const hasCostDetails = hasNamedCostComponent(costComponents)
+              const hasCostDetails = hasMeaningfulCostComponent(costComponents)
               const costComponentTotal = getCostComponentTotal(costComponents)
+              const costComponentBatchTotal = getCostComponentBatchTotal(costComponents)
+              const specificationUnitOptions = getSpecificationUnitOptions(costComponents)
 
               return (
                 <article key={product.productId} className="rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -664,12 +802,15 @@ export default function ProductCosts({ isExpanded }) {
                       <div>
                         <p className="text-sm font-bold text-slate-900">원가 상세 입력</p>
                         <p className="mt-1 text-xs text-slate-500">
-                          필름지, 원재료, 부자재처럼 세부 원가를 입력하면 원가가 자동 합산됩니다.
+                          원가 상세 행은 필수값을 모두 입력해야 저장되며, 단위는 추천값을 참고하면서 바로 직접 입력할 수 있습니다.
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-                          상세 합계 {Number(hasCostDetails ? costComponentTotal : normalizeDraftNumber(draft.costPrice)).toLocaleString('ko-KR')}원
+                          개당 원가 합계 {Number(hasCostDetails ? costComponentTotal : normalizeDraftNumber(draft.costPrice)).toLocaleString('ko-KR')}원
+                        </span>
+                        <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">
+                          상세 총액 {Number(costComponentBatchTotal).toLocaleString('ko-KR')}원
                         </span>
                         <button
                           type="button"
@@ -692,49 +833,156 @@ export default function ProductCosts({ isExpanded }) {
                     {isCostDetailExpanded && (
                       <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                         {costComponents.length === 0 && (
-                          <p className="text-sm text-slate-500">등록된 원가 상세 항목이 없습니다. 항목 추가 버튼으로 입력을 시작하세요.</p>
+                          <p className="text-sm text-slate-500">등록된 원가 상세 항목이 없습니다. 항목 추가 버튼으로 세부 원가표를 만들어보세요.</p>
                         )}
 
                         {costComponents.map((component, index) => (
                           <div
                             key={`${product.productId}-cost-component-${index}`}
-                            className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-[1.6fr_1fr_100px] lg:items-end"
+                            className="rounded-2xl border border-slate-200 bg-white p-4"
                           >
-                            <label className="block">
-                              <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                                항목명
-                              </span>
-                              <input
-                                type="text"
-                                value={component.componentName}
-                                onChange={(event) => updateCostComponentDraft(product.productId, index, 'componentName', event.target.value)}
-                                placeholder="예: 필름지, 밀가루, 포장재"
-                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
-                              />
-                            </label>
+                            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.3fr_0.8fr_0.9fr_1fr_0.9fr_1fr_1fr_1.1fr_88px] xl:items-end">
+                              <label className="block">
+                                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                  항목명
+                                </span>
+                                <input
+                                  type="text"
+                                  value={component.componentName}
+                                  onChange={(event) => updateCostComponentDraft(product.productId, index, 'componentName', event.target.value)}
+                                  required
+                                  placeholder="예: 필름지, 밀가루, 포장재"
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
+                                />
+                              </label>
 
-                            <label className="block">
-                              <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                                금액
-                              </span>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={component.amount}
-                                onChange={(event) => updateCostComponentDraft(product.productId, index, 'amount', event.target.value)}
-                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
-                              />
-                            </label>
+                              <label className="block">
+                                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                  규격 수량
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={component.specificationQuantity}
+                                  onChange={(event) => updateCostComponentDraft(product.productId, index, 'specificationQuantity', event.target.value)}
+                                  required
+                                  placeholder="예: 2"
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-700 outline-none transition-colors placeholder:text-left focus:border-primary"
+                                />
+                              </label>
 
-                            <button
-                              type="button"
-                              onClick={() => removeCostComponentDraft(product.productId, index)}
-                              className="rounded-full border border-rose-200 px-4 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-50"
-                            >
-                              삭제
-                            </button>
+                              <label className="block">
+                                <div className="mb-2 flex items-center gap-2">
+                                  <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                    단위
+                                  </span>
+                                  <span className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-[10px] font-black text-amber-600">
+                                    !
+                                    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden w-52 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-[11px] font-medium normal-case leading-relaxed tracking-normal text-white shadow-lg group-hover:block">
+                                      단위를 직접 입력하면 새 단위로 추가되어 다음 입력에서도 사용할 수 있습니다.
+                                    </span>
+                                  </span>
+                                </div>
+                                <input
+                                  type="text"
+                                  list={`cost-spec-unit-options-${product.productId}`}
+                                  value={component.specificationUnit}
+                                  onChange={(event) => updateCostComponentDraft(product.productId, index, 'specificationUnit', event.target.value)}
+                                  required
+                                  placeholder="예: 롤, box, kg"
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
+                                />
+                              </label>
+
+                              <label className="block">
+                                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                  금액
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={component.unitPrice}
+                                  onChange={(event) => updateCostComponentDraft(product.productId, index, 'unitPrice', event.target.value)}
+                                  required
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
+                                />
+                              </label>
+
+                              <label className="block">
+                                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                  수량
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={component.quantity}
+                                  onChange={(event) => updateCostComponentDraft(product.productId, index, 'quantity', event.target.value)}
+                                  required
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
+                                />
+                              </label>
+
+                              <label className="block">
+                                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                  총액
+                                </span>
+                                <input
+                                  type="text"
+                                  value={component.totalAmount}
+                                  readOnly
+                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm font-semibold text-slate-500 outline-none"
+                                />
+                              </label>
+
+                              <label className="block">
+                                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                  생산수량
+                                </span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={component.productionQuantity}
+                                  onChange={(event) => updateCostComponentDraft(product.productId, index, 'productionQuantity', event.target.value)}
+                                  required
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
+                                />
+                              </label>
+
+                              <label className="block">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                    개당단가
+                                  </span>
+                                  <span className="text-[11px] font-bold text-emerald-600">
+                                    자동 계산값 {formatCurrency(getComputedUnitCost(component))}
+                                  </span>
+                                </div>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={component.amount}
+                                  onChange={(event) => updateCostComponentDraft(product.productId, index, 'amount', event.target.value)}
+                                  required
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
+                                />
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() => removeCostComponentDraft(product.productId, index)}
+                                className="rounded-full border border-rose-200 px-4 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-50"
+                              >
+                                삭제
+                              </button>
+                            </div>
                           </div>
                         ))}
+
+                        <datalist id={`cost-spec-unit-options-${product.productId}`}>
+                          {specificationUnitOptions.map((option) => (
+                            <option key={`${product.productId}-${option}`} value={option} />
+                          ))}
+                        </datalist>
 
                         <button
                           type="button"

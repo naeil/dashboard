@@ -371,22 +371,21 @@ public class PlayAutoSyncService {
             }
 
             Orders order = outcome.order();
-            if (OrderStatusGroups.isRevenueIncludedStatus(status)) {
-                updateStats(companyId, order, false);
-            } else if (OrderStatusGroups.isCompletedReversalStatus(status)) {
+            if (OrderStatusGroups.isCompletedReversalStatus(status)) {
                 // DB????용뮉 ?醫됲뇣 雅뚯눖揆????? '?띯뫁??袁⑥┷' ?怨밴묶嚥???쇰선??野껋럩??(??녿┛?????띯뫁???
                 // 筌띲끉??+), 雅뚯눖揆?癒?땾(+)???믪눘? 疫꿸퀡以?????띯뫁??-), ?띯뫁??癒?땾(+)??疫꿸퀡以??곷튊 ???롥첎? 筌띿쉸???덈뼄.
-                updateStats(companyId, order, false);
                 BigDecimal cancelAmt = parseBigDecimal(node.path("pay_amt"));
                 order.markAsReversed(status, cancelAmt);
                 ordersRepository.save(order);
-                updateStats(companyId, order, true);
             }
+            reconcileStats(companyId, null, order);
             return true;
         }
 
         if (existingOpt.isPresent()) {
-            Orders order = refreshExistingOrder(companyId, existingOpt.get(), node, productSnapshot, resolvedSkuCd);
+            Orders existingOrder = existingOpt.get();
+            OrderStatsSnapshot previousSnapshot = OrderStatsSnapshot.from(existingOrder);
+            Orders order = refreshExistingOrder(companyId, existingOrder, node, productSnapshot, resolvedSkuCd);
             if (OrderStatusGroups.isCompletedReversalStatus(status)) {
                 BigDecimal cancelAmt = parseBigDecimal(node.path("pay_amt"));
                 // ?띯뫁?????문 ?紐껊굡??野껋럩??pay_amt揶쎛 0??곗쨮 ?????삳뮉 野껋럩??첎? 筌띾‘?앲첋?嚥? ??野껋럩??疫꿸퀣????雅뚯눖揆??野껉퀣?ｆ묾?됰만???????몃빍??
@@ -394,12 +393,11 @@ public class PlayAutoSyncService {
                     cancelAmt = null; 
                 }
                 order.markAsReversed(status, cancelAmt);
-                ordersRepository.save(order);
-                updateStats(companyId, order, true);
             } else {
                 order.clearCancelAmt();
-                ordersRepository.save(order);
             }
+            ordersRepository.save(order);
+            reconcileStats(companyId, previousSnapshot, order);
         }
         return true;
     }
@@ -807,21 +805,34 @@ public class PlayAutoSyncService {
         productOutboundRepository.save(today);
     }
 
-    private void updateStats(Long companyId, Orders order, boolean isCancellation) {
-        LocalDateTime salesBaseDateTime = resolveSalesBaseDateTime(order);
+    private void reconcileStats(Long companyId, OrderStatsSnapshot previousSnapshot, Orders currentOrder) {
+        applyStatsDelta(companyId, previousSnapshot, -1);
+        applyStatsDelta(companyId, OrderStatsSnapshot.from(currentOrder), 1);
+    }
+
+    private void applyStatsDelta(Long companyId, OrderStatsSnapshot snapshot, int direction) {
+        if (snapshot == null || direction == 0) {
+            return;
+        }
+
+        LocalDateTime salesBaseDateTime = resolveSalesBaseDateTime(snapshot);
         if (salesBaseDateTime == null) {
             return;
         }
+        if (snapshot.productId() == null || snapshot.brandId() == null || snapshot.shopId() == null) {
+            return;
+        }
+
         LocalDate targetDate = salesBaseDateTime.toLocalDate();
 
         DailySalesStats stats = statsRepository.findByCompanyIdAndDateAndShopIdAndBrandIdAndProductId(
-                companyId, targetDate, order.getShopId(), order.getBrandId(), order.getProductId())
+                companyId, targetDate, snapshot.shopId(), snapshot.brandId(), snapshot.productId())
                 .orElse(DailySalesStats.builder()
                         .companyId(companyId)
                         .date(targetDate)
-                        .shopId(order.getShopId())
-                        .brandId(order.getBrandId())
-                        .productId(order.getProductId())
+                        .shopId(snapshot.shopId())
+                        .brandId(snapshot.brandId())
+                        .productId(snapshot.productId())
                         .grossAmount(BigDecimal.ZERO)
                         .discountAmount(BigDecimal.ZERO)
                         .netRevenue(BigDecimal.ZERO)
@@ -831,19 +842,17 @@ public class PlayAutoSyncService {
                         .cancelCount(0)
                         .build());
 
-        if (!isCancellation) {
-            stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(order)));
-            stats.setDiscountAmount(stats.getDiscountAmount().add(order.getDiscountAmt()));
-            stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(order)));
-            stats.setShippingFee(stats.getShippingFee().add(order.getShippingFee()));
-            stats.setOrdererCount(stats.getOrdererCount() + 1);
-        } else {
-            stats.setGrossAmount(stats.getGrossAmount().subtract(resolveGrossAmount(order)));
-            stats.setDiscountAmount(stats.getDiscountAmount().subtract(order.getDiscountAmt()));
-            stats.setNetRevenue(stats.getNetRevenue().subtract(resolveNetRevenue(order)));
-            stats.setCancelAmount(stats.getCancelAmount().add(order.getPayAmt()));
-            stats.setOrdererCount(Math.max(0, stats.getOrdererCount() - 1));
-            stats.setCancelCount(stats.getCancelCount() + 1);
+        BigDecimal multiplier = BigDecimal.valueOf(direction);
+        if (OrderStatusGroups.isRevenueIncludedStatus(snapshot.ordStatus())) {
+            stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(snapshot).multiply(multiplier)));
+            stats.setDiscountAmount(stats.getDiscountAmount().add(snapshot.discountAmt().multiply(multiplier)));
+            stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(snapshot).multiply(multiplier)));
+            stats.setShippingFee(stats.getShippingFee().add(snapshot.shippingFee().multiply(multiplier)));
+            stats.setOrdererCount(Math.max(0, stats.getOrdererCount() + direction));
+        } else if (OrderStatusGroups.isCompletedReversalStatus(snapshot.ordStatus())) {
+            stats.setShippingFee(stats.getShippingFee().add(snapshot.shippingFee().multiply(multiplier)));
+            stats.setCancelAmount(stats.getCancelAmount().add(resolveCancelAmount(snapshot).multiply(multiplier)));
+            stats.setCancelCount(Math.max(0, stats.getCancelCount() + direction));
         }
 
         statsRepository.save(stats);
@@ -985,11 +994,25 @@ public class PlayAutoSyncService {
         return order.getOrdTime() != null ? order.getOrdTime() : order.getWdate();
     }
 
+    private LocalDateTime resolveSalesBaseDateTime(OrderStatsSnapshot snapshot) {
+        if (snapshot == null) {
+            return null;
+        }
+        return snapshot.ordTime() != null ? snapshot.ordTime() : snapshot.wdate();
+    }
+
     private BigDecimal resolveGrossAmount(Orders order) {
         if (order == null) {
             return BigDecimal.ZERO;
         }
         return calculateGrossAmount(order.getPayAmt(), order.getDiscountAmt(), order.getShippingFee());
+    }
+
+    private BigDecimal resolveGrossAmount(OrderStatsSnapshot snapshot) {
+        if (snapshot == null) {
+            return BigDecimal.ZERO;
+        }
+        return calculateGrossAmount(snapshot.payAmt(), snapshot.discountAmt(), snapshot.shippingFee());
     }
 
     private BigDecimal resolveNetRevenue(Orders order) {
@@ -999,6 +1022,23 @@ public class PlayAutoSyncService {
         BigDecimal safePayAmt = order.getPayAmt() != null ? order.getPayAmt() : BigDecimal.ZERO;
         BigDecimal safeDiscountAmt = order.getDiscountAmt() != null ? order.getDiscountAmt() : BigDecimal.ZERO;
         return safePayAmt.subtract(safeDiscountAmt);
+    }
+
+    private BigDecimal resolveNetRevenue(OrderStatsSnapshot snapshot) {
+        if (snapshot == null) {
+            return BigDecimal.ZERO;
+        }
+        return snapshot.payAmt().subtract(snapshot.discountAmt());
+    }
+
+    private BigDecimal resolveCancelAmount(OrderStatsSnapshot snapshot) {
+        if (snapshot == null) {
+            return BigDecimal.ZERO;
+        }
+        if (snapshot.cancelAmt().compareTo(BigDecimal.ZERO) > 0) {
+            return snapshot.cancelAmt();
+        }
+        return snapshot.payAmt();
     }
 
     private BigDecimal calculateGrossAmount(BigDecimal payAmt, BigDecimal discountAmt, BigDecimal shippingFee) {
@@ -1026,6 +1066,37 @@ public class PlayAutoSyncService {
 
     private IntegrationType resolvePlatform(PlayAutoShopResponseDTO dto) {
         return IntegrationType.fromShop(dto.getShopName(), blankToNull(dto.getShopCode()));
+    }
+
+    private record OrderStatsSnapshot(
+            Long shopId,
+            Long brandId,
+            Long productId,
+            BigDecimal payAmt,
+            BigDecimal discountAmt,
+            BigDecimal shippingFee,
+            BigDecimal cancelAmt,
+            LocalDateTime ordTime,
+            LocalDateTime wdate,
+            String ordStatus
+    ) {
+        private static OrderStatsSnapshot from(Orders order) {
+            if (order == null) {
+                return null;
+            }
+            return new OrderStatsSnapshot(
+                    order.getShopId(),
+                    order.getBrandId(),
+                    order.getProductId(),
+                    order.getPayAmt() != null ? order.getPayAmt() : BigDecimal.ZERO,
+                    order.getDiscountAmt() != null ? order.getDiscountAmt() : BigDecimal.ZERO,
+                    order.getShippingFee() != null ? order.getShippingFee() : BigDecimal.ZERO,
+                    order.getCancelAmt() != null ? order.getCancelAmt() : BigDecimal.ZERO,
+                    order.getOrdTime(),
+                    order.getWdate(),
+                    order.getOrdStatus()
+            );
+        }
     }
 
     private LocalDateTime maxDateTime(LocalDateTime left, LocalDateTime right) {
