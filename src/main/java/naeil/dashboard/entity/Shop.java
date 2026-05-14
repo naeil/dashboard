@@ -35,6 +35,9 @@ public class Shop {
     @Column(name = "platform", nullable = false, length = 50)
     private IntegrationType platform;
 
+    @Column(name = "color", nullable = false, length = 32)
+    private String color;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

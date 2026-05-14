@@ -42,6 +42,10 @@ public final class OrderStatusGroups {
             .sorted()
             .toList();
 
+    public static final List<String> COMPLETED_REVERSAL_STATUS_LIST = COMPLETED_REVERSAL_STATUSES.stream()
+            .sorted()
+            .toList();
+
     private OrderStatusGroups() {
     }
 

@@ -6,12 +6,12 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import naeil.dashboard.dto.BrandOptionDTO;
 import naeil.dashboard.dto.BrandSalesDTO;
-import naeil.dashboard.dto.PlatformTrendSalesDTO;
 import naeil.dashboard.dto.ProductMarketSalesDTO;
 import naeil.dashboard.dto.ProductSalesDTO;
 import naeil.dashboard.dto.SalesSummaryDTO;
 import naeil.dashboard.dto.ShopBrandSalesDTO;
 import naeil.dashboard.dto.ShopSalesDTO;
+import naeil.dashboard.dto.ShopTrendSalesDTO;
 import naeil.dashboard.service.PlayAutoCollectionService;
 import naeil.dashboard.service.SalesService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -51,14 +51,14 @@ public class SalesController {
         return ResponseEntity.ok(salesService.getProductSales(companyId, startDate, endDate, brandId));
     }
 
-    @GetMapping("/product/{productId}/channels")
+    @GetMapping("/product-group/channels")
     public ResponseEntity<List<ProductMarketSalesDTO>> getProductMarketSales(
-            @PathVariable Long productId,
             @RequestParam Long companyId,
+            @RequestParam String productGroup,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
-        return ResponseEntity.ok(salesService.getProductMarketSales(companyId, productId, startDate, endDate));
+        return ResponseEntity.ok(salesService.getProductMarketSales(companyId, productGroup, startDate, endDate));
     }
 
     @GetMapping("/brand")
@@ -92,14 +92,14 @@ public class SalesController {
     }
 
     @GetMapping("/trend")
-    public ResponseEntity<List<PlatformTrendSalesDTO>> getTrend(
+    public ResponseEntity<List<ShopTrendSalesDTO>> getTrend(
             @RequestParam Long companyId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(defaultValue = "DAY") String granularity,
             @RequestParam(required = false) Long brandId) {
 
-        return ResponseEntity.ok(salesService.getPlatformTrend(companyId, startDate, endDate, granularity, brandId));
+        return ResponseEntity.ok(salesService.getShopTrend(companyId, startDate, endDate, granularity, brandId));
     }
 
     @GetMapping("/brands")

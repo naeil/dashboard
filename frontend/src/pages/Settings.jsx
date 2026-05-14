@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildApiUrl } from '../api/apiBase'
 import { authorizedFetch } from '../api/authApi'
+import { formatDateTimeKst as formatDateTimeKstValue, formatTimeKst, parseApiDateTime } from '../utils/dateTime'
 
 const SETTINGS_API_BASE = buildApiUrl('/settings/integrations')
 
 const AUTH_TAB = 'auth'
 const COLLECTION_TAB = 'collection'
+const MARKETPLACE_TAB = 'marketplace'
 
 const UNIT_OPTIONS = [
   { value: 'DAY', label: '일' },
@@ -38,30 +40,6 @@ const HISTORY_JOB_LABELS = {
   INVENTORY: '재고/출고량 수집',
 }
 
-function formatSavedAt(date) {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')} 저장`
-}
-
-function formatDateTime(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
-    date.getDate(),
-  ).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes(),
-  ).padStart(2, '0')}`
-}
-
-function formatHistoryMessage(history) {
-  if (history.message === 'Backfilled from existing last order collection timestamp') {
-    return '직접 또는 설정된 주기마다 실행됩니다.'
-  }
-
-  if (history.message === 'Backfilled from existing last inventory collection timestamp') {
-    return '설정과 무관하게 24시간마다 자동 실행됩니다.'
-  }
-
-  return history.message || '메시지가 없습니다.'
-}
-
 const KST_TIME_ZONE = 'Asia/Seoul'
 
 const savedAtKstFormatter = new Intl.DateTimeFormat('ko-KR', {
@@ -81,25 +59,34 @@ const dateTimeKstFormatter = new Intl.DateTimeFormat('sv-SE', {
   hour12: false,
 })
 
+function formatHistoryMessage(history) {
+  if (history.message === 'Backfilled from existing last order collection timestamp') {
+    return '저장된 마지막 주문 수집 시각을 기준으로 초기화되었습니다.'
+  }
+
+  if (history.message === 'Backfilled from existing last inventory collection timestamp') {
+    return '저장된 마지막 재고 수집 시각을 기준으로 초기화되었습니다.'
+  }
+
+  return history.message || '메시지가 없습니다.'
+}
+
 function toKstDate(value) {
-  if (!value) return null
-  if (value instanceof Date) return value
-
-  const normalizedValue =
-    typeof value === 'string' && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value
-  const parsedDate = new Date(normalizedValue)
-
-  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+  return parseApiDateTime(value)
 }
 
 function formatSavedAtKst(value) {
-  const date = toKstDate(value)
-  return date ? savedAtKstFormatter.format(date) : '-'
+  return formatTimeKst(value, {
+    timeZone: KST_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 function formatDateTimeKst(value) {
   const date = toKstDate(value)
-  return date ? dateTimeKstFormatter.format(date) : '-'
+  return date ? dateTimeKstFormatter.format(date) : formatDateTimeKstValue(value, { hour12: false })
 }
 
 function SelectField({ value, onChange, disabled = false, className = '', children }) {
@@ -156,6 +143,7 @@ export default function Settings({ isExpanded }) {
   const [collectionSavedAt, setCollectionSavedAt] = useState(null)
   const [lastOrderCollectedAt, setLastOrderCollectedAt] = useState(null)
   const [collectionHistory, setCollectionHistory] = useState([])
+  const [registeredOpenMarkets, setRegisteredOpenMarkets] = useState([])
   const [toast, setToast] = useState(null)
 
   const showToast = (message, type = 'success') => {
@@ -164,9 +152,10 @@ export default function Settings({ isExpanded }) {
 
   const loadSettings = async () => {
     try {
-      const [response, historyResponse] = await Promise.all([
+      const [response, historyResponse, shopsResponse] = await Promise.all([
         authorizedFetch(SETTINGS_API_BASE),
         authorizedFetch(`${SETTINGS_API_BASE}/history?integrationType=PLAYAUTO&limit=10`),
+        authorizedFetch(`${SETTINGS_API_BASE}/shops`),
       ])
 
       if (!response.ok) return
@@ -205,6 +194,11 @@ export default function Settings({ isExpanded }) {
         const history = await historyResponse.json()
         setCollectionHistory(history || [])
       }
+
+      if (shopsResponse.ok) {
+        const shops = await shopsResponse.json()
+        setRegisteredOpenMarkets(shops || [])
+      }
     } catch (error) {
       showToast(error.message || '설정 정보를 불러오지 못했습니다.', 'error')
     }
@@ -227,9 +221,9 @@ export default function Settings({ isExpanded }) {
   }, [openMarketKey, selectedMarket])
 
   useEffect(() => {
-    let timeoutId
-    if (toast) timeoutId = setTimeout(() => setToast(null), 3000)
-    return () => clearTimeout(timeoutId)
+    if (!toast) return undefined
+    const timeoutId = window.setTimeout(() => setToast(null), 3000)
+    return () => window.clearTimeout(timeoutId)
   }, [toast])
 
   useEffect(() => {
@@ -263,11 +257,11 @@ export default function Settings({ isExpanded }) {
 
   const handleValidate = async (integrationType, apiKey) => {
     if (integrationType !== 'PLAYAUTO' && !integrationType) {
-      showToast('마켓을 먼저 선택해주세요.', 'error')
+      showToast('마켓을 먼저 선택해 주세요.', 'error')
       return
     }
     if (!apiKey) {
-      showToast('API Key를 입력해주세요.', 'error')
+      showToast('API Key를 입력해 주세요.', 'error')
       return
     }
 
@@ -392,6 +386,7 @@ export default function Settings({ isExpanded }) {
           autoCollectEnabled,
         }),
       })
+
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
         throw new Error(errorBody.message || '주문 수집 실행에 실패했습니다.')
@@ -416,13 +411,13 @@ export default function Settings({ isExpanded }) {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
-        throw new Error(errorBody.message || '쇼핑몰 정보 업데이트에 실패했습니다.')
+        throw new Error(errorBody.message || '오픈마켓 동기화에 실패했습니다.')
       }
 
       await loadSettings()
-      showToast('쇼핑몰 정보를 업데이트했습니다.')
+      showToast('오픈마켓 동기화가 완료되었습니다.')
     } catch (error) {
-      showToast(error.message || '쇼핑몰 정보 업데이트에 실패했습니다.', 'error')
+      showToast(error.message || '오픈마켓 동기화에 실패했습니다.', 'error')
     } finally {
       setIsSyncingShops(false)
     }
@@ -442,11 +437,18 @@ export default function Settings({ isExpanded }) {
     () => Boolean(authReady && collectionPeriodReady),
     [authReady, collectionPeriodReady],
   )
+  const registeredColorCount = useMemo(
+    () => registeredOpenMarkets.filter((shop) => shop.color).length,
+    [registeredOpenMarkets],
+  )
 
-  const renderTabButton = (tab, label) => {
+  const renderSettingsTabButton = (tab, label) => {
     const isActive = activeTab === tab
-    const savedAt = tab === AUTH_TAB ? authSavedAt : collectionSavedAt
-    const isConfigured = Boolean(savedAt)
+    const savedAt = tab === AUTH_TAB ? authSavedAt : tab === COLLECTION_TAB ? collectionSavedAt : null
+    const isConfigured = tab === MARKETPLACE_TAB ? registeredOpenMarkets.length > 0 : Boolean(savedAt)
+    const statusLabel = tab === MARKETPLACE_TAB
+      ? (registeredOpenMarkets.length > 0 ? `${registeredOpenMarkets.length}개 등록` : '미등록')
+      : (isConfigured ? '저장됨' : '미설정')
 
     return (
       <button
@@ -462,7 +464,7 @@ export default function Settings({ isExpanded }) {
             isConfigured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
           }`}
         >
-          {isConfigured ? '저장됨' : '미설정'}
+          {statusLabel}
         </span>
         {savedAt && (
           <span className="ml-3 align-middle text-xs font-medium text-slate-400">
@@ -491,23 +493,27 @@ export default function Settings({ isExpanded }) {
       <div className="max-w-6xl">
         <div className="mb-8">
           <h1 className="text-3xl font-black tracking-tight text-slate-950">설정</h1>
-          <p className="mt-2 text-sm text-slate-500">인증 정보와 주문 수집 설정을 분리해서 관리할 수 있습니다.</p>
+          <p className="mt-2 text-sm text-slate-500">인증 정보, 수집 설정, 오픈마켓 등록 현황을 한곳에서 관리합니다.</p>
         </div>
 
         <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
           <div className="mb-8 border-b border-slate-200 pb-5">
             <div className="overflow-x-auto">
               <div className="flex min-w-max items-center gap-4">
-                {renderTabButton(AUTH_TAB, '인증 정보')}
+                {renderSettingsTabButton(AUTH_TAB, '인증 정보')}
                 <span className="text-3xl font-light text-slate-300">/</span>
-                {renderTabButton(COLLECTION_TAB, '수집 설정')}
+                {renderSettingsTabButton(COLLECTION_TAB, '수집 설정')}
+                <span className="text-3xl font-light text-slate-300">/</span>
+                {renderSettingsTabButton(MARKETPLACE_TAB, '오픈마켓 등록 현황')}
               </div>
             </div>
 
             <p className="mt-4 text-sm text-slate-500">
               {activeTab === AUTH_TAB
                 ? 'PlayAuto와 오픈마켓 연동 정보를 저장합니다.'
-                : '주문 수집과 재고/출고량 수집을 각각 관리할 수 있습니다.'}
+                : activeTab === COLLECTION_TAB
+                  ? '주문 수집과 재고/출고량 수집을 각각 관리할 수 있습니다.'
+                  : 'PlayAuto에서 동기화된 오픈마켓 목록과 플랫폼 현황을 확인합니다.'}
             </p>
 
             <div className="mt-3 text-xs font-medium text-slate-400">
@@ -515,9 +521,13 @@ export default function Settings({ isExpanded }) {
                 ? authSavedAt
                   ? `마지막 저장: ${formatSavedAtKst(authSavedAt)}`
                   : '아직 인증 정보가 저장되지 않았습니다.'
-                : collectionSavedAt
-                  ? `마지막 저장: ${formatSavedAtKst(collectionSavedAt)}`
-                  : '아직 수집 설정이 저장되지 않았습니다.'}
+                : activeTab === COLLECTION_TAB
+                  ? collectionSavedAt
+                    ? `마지막 저장: ${formatSavedAtKst(collectionSavedAt)}`
+                    : '아직 수집 설정이 저장되지 않았습니다.'
+                  : registeredOpenMarkets.length > 0
+                    ? `등록된 오픈마켓 ${registeredOpenMarkets.length}개`
+                    : '아직 동기화된 오픈마켓이 없습니다.'}
             </div>
           </div>
 
@@ -528,7 +538,7 @@ export default function Settings({ isExpanded }) {
                   <div>
                     <h3 className="text-xl font-bold text-slate-900">PlayAuto 인증 정보</h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      API Key, 이메일, 비밀번호를 입력한 뒤 연동 테스트를 진행해주세요.
+                      API Key, 이메일, 비밀번호를 입력한 뒤 연동 테스트를 진행해 주세요.
                     </p>
                   </div>
                   <span
@@ -591,7 +601,7 @@ export default function Settings({ isExpanded }) {
                   <div>
                     <h3 className="text-xl font-bold text-slate-900">오픈마켓 통합</h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      오픈마켓 API Key 또는 Access Token을 입력하고 검증해주세요.
+                      오픈마켓 API Key 또는 Access Token을 입력하고 검증할 수 있습니다.
                     </p>
                   </div>
                   <span
@@ -667,7 +677,7 @@ export default function Settings({ isExpanded }) {
                   <div>
                     <h3 className="text-xl font-bold text-slate-900">주문 수집</h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      주문 수집 기간 기준으로 수동 실행할 수 있고, 자동 수집을 켜면 저장한 주기로 스케줄러가 주문을 수집합니다.
+                      주문 수집 기간 기준으로 수동 실행할 수 있고, 자동 수집을 켜면 저장한 주기로 주문 데이터를 수집합니다.
                     </p>
                   </div>
 
@@ -710,18 +720,6 @@ export default function Settings({ isExpanded }) {
                           </option>
                         ))}
                       </SelectField>
-                      <button
-                        type="button"
-                        onClick={handleSyncShops}
-                        disabled={isSyncingShops || !authReady}
-                        className={`rounded-xl border px-4 py-3 text-sm font-bold transition-all ${
-                          isSyncingShops || !authReady
-                            ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                            : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-900'
-                        }`}
-                      >
-                        {isSyncingShops ? '업데이트 중...' : '쇼핑몰 정보 업데이트'}
-                      </button>
                       <button
                         type="button"
                         onClick={handleRunOrderCollection}
@@ -777,8 +775,11 @@ export default function Settings({ isExpanded }) {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-xl font-bold text-slate-900">최근 수집 실행 이력</div>
+                  <div className="text-xs text-slate-400">
+                    마지막 주문 수집 시각: {formatDateTimeKst(lastOrderCollectedAt)}
+                  </div>
                 </div>
 
                 <div className="mt-4 space-y-3">
@@ -836,6 +837,106 @@ export default function Settings({ isExpanded }) {
                 >
                   {isSavingCollection ? '저장 중...' : '주문 수집 설정 저장'}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === MARKETPLACE_TAB && (
+            <div className="space-y-8">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">오픈마켓 등록 현황</h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      PlayAuto 기준으로 동기화된 쇼핑몰 목록과 플랫폼 분류를 확인할 수 있습니다.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSyncShops}
+                    disabled={isSyncingShops || !authReady}
+                    className={`rounded-xl px-5 py-3 text-sm font-bold transition-all ${
+                      isSyncingShops || !authReady
+                        ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                        : 'bg-slate-950 text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    {isSyncingShops ? '동기화 중...' : '오픈마켓 동기화'}
+                  </button>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">등록된 마켓 수</p>
+                    <p className="mt-3 text-3xl font-black text-slate-900">
+                      {registeredOpenMarkets.length.toLocaleString('ko-KR')}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">색상 배정</p>
+                    <p className="mt-3 text-3xl font-black text-slate-900">
+                      {registeredColorCount.toLocaleString('ko-KR')}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">동기화 조건</p>
+                    <p className="mt-3 text-sm font-bold text-slate-900">
+                      {authReady ? 'PlayAuto 인증 정보 확인됨' : 'PlayAuto 인증 정보 필요'}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      인증 정보가 저장되어 있어야 오픈마켓 동기화를 실행할 수 있습니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 px-6 py-4">
+                  <h4 className="text-lg font-bold text-slate-900">등록된 오픈마켓 목록</h4>
+                  <p className="mt-1 text-sm text-slate-500">동기화된 shop 정보 기준으로 정렬됩니다.</p>
+                </div>
+
+                {registeredOpenMarkets.length === 0 ? (
+                  <div className="px-6 py-16 text-center text-slate-500">
+                    표시할 오픈마켓이 없습니다. 인증 정보를 확인한 뒤 오픈마켓 동기화를 실행해 주세요.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border-collapse">
+                      <thead className="bg-slate-50">
+                        <tr className="border-b border-slate-200">
+                          {['쇼핑몰명', '색상', '코드', '등록 시각'].map((label) => (
+                            <th
+                              key={label}
+                              className="whitespace-nowrap px-6 py-4 text-left text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400"
+                            >
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {registeredOpenMarkets.map((shop) => (
+                          <tr key={shop.shopId} className="bg-white">
+                            <td className="px-6 py-4 text-sm font-bold text-slate-900">{shop.shopName}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className="h-3 w-3 shrink-0 rounded-full border border-slate-200"
+                                  style={{ backgroundColor: shop.color || '#94A3B8' }}
+                                ></span>
+                                <span className="text-sm font-medium text-slate-600">{shop.color || '-'}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm font-medium text-slate-600">{shop.shopCode}</td>
+                            <td className="px-6 py-4 text-sm text-slate-500">{formatDateTimeKst(shop.createdAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}

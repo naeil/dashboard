@@ -8,8 +8,10 @@ import java.math.BigDecimal;
  */
 public interface ProductSalesDTO {
     Long getProductId();
+    String getProductGroup();
     String getProductName();
     String getExternalProductId();
+    Long getSkuCount();
     Integer getCurrentRealStock();
     Long getTotalOrderCount();
     BigDecimal getTotalGrossAmount();

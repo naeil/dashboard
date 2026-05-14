@@ -148,13 +148,27 @@ function formatCurrency(value) {
   return `₩${Math.round(Number(value ?? 0)).toLocaleString('ko-KR')}`
 }
 
-function getAllocationDivisor(mode, monthlyOutboundCount) {
-  if (mode !== 'AVERAGE_ALLOCATED') return 1
-  return Math.max(Number(monthlyOutboundCount ?? 0), 1)
+function resolveAllocationBaseCount(monthlyOutboundCount, realStock) {
+  const outboundCount = Number(monthlyOutboundCount ?? 0)
+  if (Number.isFinite(outboundCount) && outboundCount > 0) {
+    return outboundCount
+  }
+
+  const stockCount = Number(realStock ?? 0)
+  if (Number.isFinite(stockCount) && stockCount > 0) {
+    return stockCount
+  }
+
+  return 1
 }
 
-function calculateExpectedMarketPrice(commonDraft, channelDraft, mode, monthlyOutboundCount) {
-  const divisor = getAllocationDivisor(mode, monthlyOutboundCount)
+function getAllocationDivisor(mode, monthlyOutboundCount, realStock) {
+  if (mode !== 'AVERAGE_ALLOCATED') return 1
+  return resolveAllocationBaseCount(monthlyOutboundCount, realStock)
+}
+
+function calculateExpectedMarketPrice(commonDraft, channelDraft, mode, monthlyOutboundCount, realStock) {
+  const divisor = getAllocationDivisor(mode, monthlyOutboundCount, realStock)
   const salePrice = normalizeDraftNumber(commonDraft?.salePrice)
   const unitCost = normalizeDraftNumber(commonDraft?.costPrice)
   const sharedCommonCosts =
@@ -177,9 +191,9 @@ function calculateExpectedMarketPrice(commonDraft, channelDraft, mode, monthlyOu
   return allocatedFixedCosts / Math.max(1 - normalizedRate, 0.0001)
 }
 
-function calculateCurrentMarketProfit(commonDraft, channelDraft, mode, monthlyOutboundCount) {
+function calculateCurrentMarketProfit(commonDraft, channelDraft, mode, monthlyOutboundCount, realStock) {
   const salePrice = normalizeDraftNumber(commonDraft?.salePrice)
-  const divisor = getAllocationDivisor(mode, monthlyOutboundCount)
+  const divisor = getAllocationDivisor(mode, monthlyOutboundCount, realStock)
   const unitCost = normalizeDraftNumber(commonDraft?.costPrice)
   const sharedCommonCosts =
     normalizeDraftNumber(commonDraft?.sgnaCost) +
@@ -217,15 +231,16 @@ function ChannelCostEditor({
   commonValue,
   calculationMode,
   monthlyOutboundCount,
+  realStock,
   value,
   saving,
   onChange,
   onSave,
 }) {
-  const expectedMarketPrice = calculateExpectedMarketPrice(commonValue, value, calculationMode, monthlyOutboundCount)
-  const currentMarketProfit = calculateCurrentMarketProfit(commonValue, value, calculationMode, monthlyOutboundCount)
+  const expectedMarketPrice = calculateExpectedMarketPrice(commonValue, value, calculationMode, monthlyOutboundCount, realStock)
+  const currentMarketProfit = calculateCurrentMarketProfit(commonValue, value, calculationMode, monthlyOutboundCount, realStock)
   const isAverageMode = calculationMode === 'AVERAGE_ALLOCATED'
-  const allocationBaseCount = Math.max(Number(monthlyOutboundCount ?? 0), 1)
+  const allocationBaseCount = resolveAllocationBaseCount(monthlyOutboundCount, realStock)
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
@@ -1016,7 +1031,8 @@ export default function ProductCosts({ isExpanded }) {
                           shop={shop}
                           commonValue={draft}
                           calculationMode={calculationMode}
-                          monthlyOutboundCount={product.monthlyOutboundCount ?? product.realStock ?? 0}
+                          monthlyOutboundCount={product.monthlyOutboundCount}
+                          realStock={product.realStock}
                           value={channelDrafts[product.productId]?.[shop.shopId] || {
                             channelFeeType: 'RATE',
                             channelFeeValue: '0',

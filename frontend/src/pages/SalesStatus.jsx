@@ -31,30 +31,19 @@ ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Title, Tool
 
 const KRW = (value) => `₩${Math.round(Number(value ?? 0)).toLocaleString('ko-KR')}`
 
-const PLATFORM_COLORS = {
-  NAVER_SMARTSTORE: '#2DB400',
-  COUPANG: '#E42828',
-  GMARKET: '#2B66FF',
-  ELEVEN_STREET: '#FF3333',
-  AUCTION: '#E60023',
-  IMWEB: '#111827',
-  LOTTE_ON: '#DC2626',
-  KAKAO_TALK_STORE: '#FEE500',
-  NONGSAN_SHOPPINGMALL: '#94A3B8',
-  OTHER: '#94A3B8'
-}
+function getAdaptiveAmountClass(value, variant = 'card') {
+  const length = KRW(value).length
 
-const PLATFORM_LABELS = {
-  NAVER_SMARTSTORE: '스마트스토어',
-  COUPANG: '쿠팡',
-  GMARKET: '지마켓',
-  ELEVEN_STREET: '11번가',
-  AUCTION: '옥션',
-  IMWEB: '아임웹',
-  LOTTE_ON: '롯데ON',
-  KAKAO_TALK_STORE: '카카오톡 스토어',
-  NONGSAN_SHOPPINGMALL: '기타',
-  OTHER: '기타'
+  if (variant === 'hero') {
+    if (length >= 14) return 'text-[1.45rem] sm:text-[1.75rem] lg:text-[2rem] xl:text-[2.3rem] 2xl:text-[2.55rem]'
+    if (length >= 12) return 'text-[1.65rem] sm:text-[1.95rem] lg:text-[2.25rem] xl:text-[2.55rem] 2xl:text-[2.8rem]'
+    return 'text-[1.9rem] sm:text-[2.25rem] lg:text-[2.7rem] xl:text-[3.05rem] 2xl:text-[3.35rem]'
+  }
+
+  if (length >= 12) return 'text-[0.58rem] sm:text-[0.66rem] lg:text-[0.78rem] xl:text-[0.88rem] 2xl:text-[0.98rem]'
+  if (length >= 10) return 'text-[0.66rem] sm:text-[0.74rem] lg:text-[0.86rem] xl:text-[0.98rem] 2xl:text-[1.08rem]'
+  if (length >= 8) return 'text-[0.78rem] sm:text-[0.86rem] lg:text-[0.98rem] xl:text-[1.1rem] 2xl:text-[1.2rem]'
+  return 'text-[0.92rem] sm:text-[1rem] lg:text-[1.15rem] xl:text-[1.28rem] 2xl:text-[1.42rem]'
 }
 
 const VIEW_TYPES = ['DAY', 'WEEK', 'MONTH', 'CUSTOM']
@@ -74,24 +63,85 @@ function toAlphaColor(hex, alpha = 0.12) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-function resolveShopPlatform(shop) {
-  const platform = String(shop?.platform ?? '').toUpperCase()
-  if (platform && PLATFORM_COLORS[platform]) return platform
+function createStableShopColor(seed) {
+  const source = String(seed || '').trim()
+  if (!source) return '#94A3B8'
 
-  const name = String(shop?.shopName ?? '').toLowerCase()
-  const code = String(shop?.shopCode ?? '').toUpperCase()
+  const palette = [
+    '#9A3412', '#7C2D12', '#B91C1C', '#BE123C', '#A21CAF',
+    '#7E22CE', '#6D28D9', '#4338CA', '#0F766E', '#0D9488',
+    '#15803D', '#3F6212', '#65A30D', '#A16207', '#CA8A04',
+    '#C2410C', '#EA580C', '#C026D3', '#DB2777', '#7F1D1D',
+    '#4D7C0F', '#166534', '#134E4A', '#701A75', '#5B21B6',
+    '#9F1239', '#92400E', '#854D0E', '#1E3A8A'
+  ]
 
-  if (name.includes('스마트스토어') || code === 'A077') return 'NAVER_SMARTSTORE'
-  if (name.includes('쿠팡') || code === 'B378') return 'COUPANG'
-  if (name.includes('지마켓') || code === 'A006') return 'GMARKET'
-  if (name.includes('11번가') || code === 'A112') return 'ELEVEN_STREET'
-  if (name.includes('옥션') || code === 'A001') return 'AUCTION'
-  if (name.includes('아임웹') || code === 'B005') return 'IMWEB'
-  if (name.includes('롯데') || code === 'A524') return 'LOTTE_ON'
-  if (name.includes('카카오') || code === 'B688') return 'KAKAO_TALK_STORE'
+  let hash = 0
+  for (let index = 0; index < source.length; index += 1) {
+    hash = ((hash << 5) - hash) + source.charCodeAt(index)
+    hash |= 0
+  }
 
-  return 'OTHER'
+  return palette[Math.abs(hash) % palette.length]
 }
+
+function resolveRepresentativeShopColor(shopCode, shopName) {
+  const normalizedCode = String(shopCode || '').trim().toUpperCase()
+  const normalizedName = String(shopName || '').replaceAll(/\s+/g, '').trim().toLowerCase()
+
+  const byCode = {
+    A000: '#475569',
+    A077: '#03C75A',
+    B378: '#346AFF',
+    A112: '#FF6B00',
+    A001: '#E11D48',
+    A006: '#06B6D4',
+    B688: '#FEE500',
+    B005: '#7C3AED',
+    A524: '#DC2626',
+    A118: '#A16207',
+  }
+
+  const byName = {
+    직접입력: '#475569',
+    스마트스토어: '#03C75A',
+    쿠팡: '#346AFF',
+    '11번가': '#FF6B00',
+    옥션: '#E11D48',
+    지마켓: '#06B6D4',
+    카카오톡스토어: '#FEE500',
+    아임웹: '#7C3AED',
+    롯데on: '#DC2626',
+    농수산쇼핑몰: '#A16207',
+  }
+
+  return byCode[normalizedCode] || byName[normalizedName] || null
+}
+
+function getShopDisplayColor(shop) {
+  if (shop?.color) {
+    return shop.color
+  }
+
+  return resolveRepresentativeShopColor(shop?.shopCode, shop?.shopName)
+    || createStableShopColor(shop?.shopCode || shop?.shopName)
+}
+
+function formatTrendShopLabel(shopName, shopCode) {
+  if (shopName && shopCode) return `${shopName} (${shopCode})`
+  return shopName || shopCode || '-'
+}
+
+function getProductGroupMeta(product) {
+  const skuCount = Number(product?.skuCount ?? 0)
+  const groupName = product?.productGroup || product?.productName || '-'
+  const subLabel = skuCount > 1
+    ? `SKU ${skuCount.toLocaleString('ko-KR')}종`
+    : (product?.externalProductId || '-')
+
+  return { groupName, subLabel, skuCount }
+}
+
 function toDateInputValue(date) {
   return format(date, 'yyyy-MM-dd')
 }
@@ -351,6 +401,11 @@ function getGrowthLabel(viewType) {
   return '전일 대비 성장'
 }
 
+function clampToToday(date) {
+  const today = new Date()
+  return date > today ? today : date
+}
+
 export default function SalesStatus({ isExpanded }) {
   const [companyId] = useState(1)
   const [viewType, setViewType] = useState('DAY')
@@ -365,6 +420,7 @@ export default function SalesStatus({ isExpanded }) {
   const [shops, setShops] = useState([])
   const [brands, setBrands] = useState([])
   const [trendData, setTrendData] = useState({ labels: [], datasets: [] })
+  const [trendBuckets, setTrendBuckets] = useState([])
   const [trendGranularity, setTrendGranularity] = useState('DAY')
   const [growthInfo, setGrowthInfo] = useState({ label: '전일 대비 성장', value: null })
   const [visibleCount, setVisibleCount] = useState(10)
@@ -420,22 +476,33 @@ export default function SalesStatus({ isExpanded }) {
 
       const rawTrend = trendRes.data || []
       const buckets = buildTrendBuckets(trendRange.granularity, trendRange.start, trendRange.end)
-      const platforms = [...new Set(rawTrend.map((item) => item.platform))]
+      const shops = [...new Map(
+        rawTrend.map((item) => [item.shopCode, {
+          shopCode: item.shopCode,
+          shopName: item.shopName,
+          color: item.color || '#94A3B8',
+        }])
+      ).values()]
       const trendValueMap = new Map(
-        rawTrend.map((item) => [`${item.date}|${item.platform}`, Math.round(Number(item.netRevenue ?? 0))])
+        rawTrend.map((item) => [`${item.date}|${item.shopCode}`, Math.max(0, Math.round(Number(item.netRevenue ?? 0)))])
       )
 
-      const datasets = platforms.map((platform) => ({
-        label: platform,
-        data: buckets.map((bucket) => trendValueMap.get(`${bucket}|${platform}`) ?? 0),
-        backgroundColor: PLATFORM_COLORS[platform] || '#94A3B8',
-        borderRadius: 4
-      }))
+      const datasets = shops
+        .map((shop) => ({
+          label: shop.shopName,
+          shopCode: shop.shopCode,
+          shopName: shop.shopName,
+          data: buckets.map((bucket) => trendValueMap.get(`${bucket}|${shop.shopCode}`) ?? 0),
+          backgroundColor: shop.color,
+          borderRadius: 4
+        }))
+        .filter((dataset) => dataset.data.some((value) => Number(value ?? 0) > 0))
 
       setTrendData({
         labels: buckets.map((value) => formatTrendLabel(trendRange.granularity, value, metricRange.start, trendRange.end)),
         datasets
       })
+      setTrendBuckets(buckets)
       setTrendGranularity(trendRange.granularity)
     } catch (error) {
       console.error('Sales dashboard API error:', error)
@@ -509,7 +576,7 @@ export default function SalesStatus({ isExpanded }) {
     datasets: [
       {
         data: nonZeroShops.map((shop) => Number(shop.totalNetRevenue ?? 0)),
-        backgroundColor: nonZeroShops.map((shop) => PLATFORM_COLORS[resolveShopPlatform(shop)] || '#94A3B8'),
+        backgroundColor: nonZeroShops.map((shop) => getShopDisplayColor(shop)),
         borderWidth: 0,
         hoverOffset: 8,
         cutout: '68%'
@@ -527,9 +594,9 @@ export default function SalesStatus({ isExpanded }) {
     }
 
     const items = (tooltip.dataPoints || [])
-      .filter((point) => Number(point.parsed?.y ?? 0) > 0)
+      .filter((point) => Number(point.parsed?.y ?? 0) !== 0)
       .map((point) => ({
-        label: PLATFORM_LABELS[point.dataset.label] || point.dataset.label,
+        label: formatTrendShopLabel(point.dataset.shopName, point.dataset.shopCode),
         value: KRW(point.parsed.y),
         color: point.dataset.backgroundColor,
         backgroundColor: toAlphaColor(point.dataset.backgroundColor)
@@ -549,6 +616,82 @@ export default function SalesStatus({ isExpanded }) {
       items
     })
   }, [])
+
+  const handleTrendBarClick = useCallback((elements) => {
+    if (!elements?.length) return
+
+    const bucketIndex = elements[0]?.index
+    const bucket = trendBuckets[bucketIndex]
+    if (!bucket) return
+
+    trendTooltipHoverRef.current = false
+    setTrendTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+
+    if (trendGranularity === 'MONTH') {
+      setViewType('MONTH')
+      setMonthlyValue(format(parseISO(bucket), 'yyyy-MM'))
+      return
+    }
+
+    if (trendGranularity === 'WEEK') {
+      setViewType('WEEK')
+      setWeeklyDate(bucket)
+      return
+    }
+
+    setViewType('DAY')
+    setDailyDate(bucket)
+  }, [trendBuckets, trendGranularity])
+
+  const handleShiftTrendPeriod = useCallback((direction) => {
+    trendTooltipHoverRef.current = false
+    setTrendTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+
+    if (viewType === 'DAY') {
+      const nextDate = clampToToday(addDays(parseDailyDate(dailyDate, new Date()), direction))
+      setDailyDate(format(nextDate, 'yyyy-MM-dd'))
+      return
+    }
+
+    if (viewType === 'WEEK') {
+      const nextWeekDate = clampToToday(addWeeks(parseDailyDate(weeklyDate, new Date()), direction))
+      setWeeklyDate(format(nextWeekDate, 'yyyy-MM-dd'))
+      return
+    }
+
+    if (viewType === 'MONTH') {
+      const nextMonthDate = startOfMonth(addMonths(parseMonthlyDate(monthlyValue, new Date()), direction))
+      const currentMonth = startOfMonth(new Date())
+      const clampedMonthDate = nextMonthDate > currentMonth ? currentMonth : nextMonthDate
+      setMonthlyValue(format(clampedMonthDate, 'yyyy-MM'))
+    }
+  }, [dailyDate, monthlyValue, viewType, weeklyDate])
+
+  const canNavigateTrend = viewType !== 'CUSTOM'
+
+  const canShiftTrendForward = useMemo(() => {
+    const today = new Date()
+
+    if (viewType === 'DAY') {
+      return differenceInCalendarDays(today, parseDailyDate(dailyDate, today)) > 0
+    }
+
+    if (viewType === 'WEEK') {
+      return startOfWeek(parseDailyDate(weeklyDate, today), { weekStartsOn: 1 }) < startOfWeek(today, { weekStartsOn: 1 })
+    }
+
+    if (viewType === 'MONTH') {
+      return startOfMonth(parseMonthlyDate(monthlyValue, today)) < startOfMonth(today)
+    }
+
+    return false
+  }, [dailyDate, monthlyValue, viewType, weeklyDate])
+
+  const trendNavigationLabel = viewType === 'MONTH'
+    ? '월'
+    : viewType === 'WEEK'
+      ? '주'
+      : '일'
 
   const handleRefreshTodaySales = useCallback(async () => {
     if (isRefreshingTodaySales) return
@@ -582,7 +725,7 @@ export default function SalesStatus({ isExpanded }) {
 
     try {
       const response = await getProductMarketSales(
-        product.productId,
+        product.productGroup || product.productName,
         companyId,
         currentMetricRange.start,
         currentMetricRange.end
@@ -607,11 +750,6 @@ export default function SalesStatus({ isExpanded }) {
   useEffect(() => {
     closeProductMarketDetail()
   }, [closeProductMarketDetail, selectedBrand, dailyDate, weeklyDate, monthlyValue, customRange.start, customRange.end, viewType])
-
-  const selectedProductCostSnapshot = useMemo(
-    () => (productMarketSales.length > 0 ? productMarketSales[0] : null),
-    [productMarketSales]
-  )
 
   const selectedProductMarketSummary = useMemo(() => (
     productMarketSales.reduce((accumulator, item) => ({
@@ -674,26 +812,6 @@ export default function SalesStatus({ isExpanded }) {
               ))}
             </div>
           </div>
-
-          {false && viewType === 'DAY' && (
-            <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="material-symbols-outlined text-sm text-slate-400">calendar_month</span>
-                <input
-                  type="date"
-                  value={dailyDate}
-                  onChange={(event) => setDailyDate(event.target.value)}
-                  className="rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-700 outline-none focus:border-primary"
-                />
-                <button
-                  onClick={() => setDailyDate(getInitialDailyDate())}
-                  className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200"
-                >
-                  오늘
-                </button>
-              </div>
-            </div>
-          )}
 
           {viewType === 'CUSTOM' && (
             <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
@@ -785,7 +903,7 @@ export default function SalesStatus({ isExpanded }) {
                 </button>
               )}
             </div>
-            <h2 className="mt-2 text-[1.9rem] font-black leading-tight sm:text-[2.25rem] lg:text-[2.7rem] xl:text-[3.05rem] 2xl:text-[3.35rem]">
+            <h2 className={`mt-2 font-black leading-tight ${getAdaptiveAmountClass(summary?.totalGrossAmount, 'hero')}`}>
               {summary ? KRW(summary.totalGrossAmount) : '₩0'}
             </h2>
             {refreshNotice && (
@@ -799,35 +917,35 @@ export default function SalesStatus({ isExpanded }) {
             )}
           </div>
 
-          <div className="relative z-10 mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 min-[1800px]:grid-cols-4">
-            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+          <div className="relative z-10 mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2 min-[1800px]:grid-cols-4">
+            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
               <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
                 배송비 제외 매출액
               </p>
-              <p className="overflow-hidden text-[0.92rem] font-black leading-none text-primary-fixed sm:text-[1rem] lg:text-[1.15rem] xl:text-[1.28rem] 2xl:text-[1.42rem]">
+              <p className={`mt-4 w-full whitespace-nowrap font-black leading-none text-primary-fixed ${getAdaptiveAmountClass(summary?.totalNetRevenue)}`}>
                 {summary ? KRW(summary.totalNetRevenue) : '₩0'}
               </p>
             </div>
-            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
               <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
                 배송비 합계
               </p>
-              <p className="overflow-hidden text-[0.92rem] font-black leading-none text-primary-fixed sm:text-[1rem] lg:text-[1.15rem] xl:text-[1.28rem] 2xl:text-[1.42rem]">
+              <p className={`mt-4 w-full whitespace-nowrap font-black leading-none text-primary-fixed ${getAdaptiveAmountClass(summary?.totalShippingFee)}`}>
                 {summary ? KRW(summary.totalShippingFee) : '₩0'}
               </p>
             </div>
-            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
               <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">수익</p>
-              <p className="overflow-hidden text-[0.92rem] font-black leading-none text-primary-fixed sm:text-[1rem] lg:text-[1.15rem] xl:text-[1.28rem] 2xl:text-[1.42rem]">
+              <p className={`mt-4 w-full whitespace-nowrap font-black leading-none text-primary-fixed ${getAdaptiveAmountClass(summary?.profitAmount)}`}>
                 {summary ? KRW(summary.profitAmount) : '₩0'}
               </p>
             </div>
-            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
               <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
                 {growthInfo.label}
               </p>
               <p
-                className={`flex items-center text-[0.9rem] font-black leading-none sm:text-[1rem] lg:text-[1.1rem] xl:text-[1.24rem] 2xl:text-[1.42rem] ${
+                className={`mt-4 flex items-center text-[0.9rem] font-black leading-none sm:text-[1rem] lg:text-[1.1rem] xl:text-[1.24rem] 2xl:text-[1.42rem] ${
                   growthInfo.value === null
                     ? 'text-slate-300'
                     : growthInfo.value >= 0
@@ -870,11 +988,11 @@ export default function SalesStatus({ isExpanded }) {
           <div className="flex flex-col justify-between rounded-xl border border-rose-100 bg-rose-50/50 p-5">
             <div>
               <div className="flex items-start justify-between">
-                <span className="mb-1 block text-xs font-semibold text-rose-600">주문 취소</span>
-                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-black text-rose-600">
-                  {summary?.cancelCount || 0}건                </span>
+                <span className="mb-1 block text-xs font-semibold text-rose-600">취소 / 반품 현황</span>
               </div>
-              <p className="text-xl font-bold text-rose-700">{summary ? KRW(summary.totalCancelAmount || 0) : '₩0'}</p>
+              <p className="text-xl font-bold text-rose-700">
+                취소 {Number(summary?.cancelStatusCount ?? 0).toLocaleString('ko-KR')}건 / 반품 {Number(summary?.returnStatusCount ?? 0).toLocaleString('ko-KR')}건
+              </p>
             </div>
           </div>
 
@@ -932,19 +1050,48 @@ export default function SalesStatus({ isExpanded }) {
             <div className="flex flex-wrap items-center gap-2 2xl:justify-end">
               {trendData.datasets.map((dataset) => (
                 <div
-                  key={dataset.label}
+                  key={dataset.shopCode || dataset.label}
                   className="inline-flex items-center gap-3 whitespace-nowrap rounded-full bg-surface-container px-3 py-1.5"
                 >
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: dataset.backgroundColor }}></span>
                   <span className="text-xs font-medium">
-                    {PLATFORM_LABELS[dataset.label] || dataset.label}
+                    {dataset.label}
                   </span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="relative min-h-[350px] flex-1">
+          <div className="relative h-[180px] min-h-[180px] flex-1 xl:h-[210px] xl:min-h-[210px]">
+            {canNavigateTrend && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleShiftTrendPeriod(-1)}
+                  className="absolute left-0 top-1/2 z-10 inline-flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-lg backdrop-blur transition hover:border-slate-300 hover:bg-white hover:text-slate-900"
+                  aria-label={`이전 ${trendNavigationLabel} 보기`}
+                  title={`이전 ${trendNavigationLabel} 보기`}
+                >
+                  <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleShiftTrendPeriod(1)}
+                  disabled={!canShiftTrendForward}
+                  className={`absolute right-0 top-1/2 z-10 inline-flex h-10 w-10 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-white/95 shadow-lg backdrop-blur transition ${
+                    canShiftTrendForward
+                      ? 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-white hover:text-slate-900'
+                      : 'cursor-not-allowed border-slate-100 text-slate-300 shadow-none'
+                  }`}
+                  aria-label={`다음 ${trendNavigationLabel} 보기`}
+                  title={`다음 ${trendNavigationLabel} 보기`}
+                >
+                  <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                </button>
+              </>
+            )}
+
             <Bar
               className="!h-full !w-full"
               style={{ height: '100%', width: '100%' }}
@@ -952,6 +1099,13 @@ export default function SalesStatus({ isExpanded }) {
               options={{
                 responsive: true,
                 maintainAspectRatio: false,
+                onClick: (_, elements) => handleTrendBarClick(elements),
+                onHover: (event, elements) => {
+                  const target = event?.native?.target
+                  if (target) {
+                    target.style.cursor = elements?.length ? 'pointer' : 'default'
+                  }
+                },
                 plugins: {
                   legend: { display: false },
                   tooltip: {
@@ -959,6 +1113,13 @@ export default function SalesStatus({ isExpanded }) {
                     mode: 'index',
                     intersect: false,
                     external: handleTrendTooltip
+                  }
+                },
+                datasets: {
+                  bar: {
+                    categoryPercentage: 0.62,
+                    barPercentage: 0.86,
+                    maxBarThickness: 44
                   }
                 },
                 scales: {
@@ -1074,7 +1235,7 @@ export default function SalesStatus({ isExpanded }) {
                   <div className="flex items-center space-x-3">
                     <div
                       className="h-3 w-3 shrink-0 rounded-full"
-                      style={{ backgroundColor: PLATFORM_COLORS[resolveShopPlatform(shop)] || '#94A3B8' }}
+                      style={{ backgroundColor: getShopDisplayColor(shop) }}
                     ></div>
                     <span className="text-sm font-bold">{shop.shopName}</span>
                   </div>
@@ -1101,7 +1262,6 @@ export default function SalesStatus({ isExpanded }) {
                 <th className="whitespace-nowrap px-8 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">총 매출액</th>
                 <th className="whitespace-nowrap px-8 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">객단가</th>
                 <th className="whitespace-nowrap px-8 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">주문건수</th>
-                <th className="whitespace-nowrap px-8 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">관리</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-container">
@@ -1113,8 +1273,8 @@ export default function SalesStatus({ isExpanded }) {
                 >
                   <td className="px-8 py-5 text-center">
                     <div className="flex flex-col items-center">
-                      <p className="text-sm font-bold text-primary">{product.productName}</p>
-                      <p className="text-[11px] text-on-surface-variant">{product.externalProductId || '-'}</p>
+                      <p className="text-sm font-bold text-primary">{getProductGroupMeta(product).groupName}</p>
+                      <p className="text-[11px] text-on-surface-variant">{getProductGroupMeta(product).subLabel}</p>
                     </div>
                   </td>
                   <td className="px-8 py-5 text-center">
@@ -1126,18 +1286,6 @@ export default function SalesStatus({ isExpanded }) {
                   <td className="px-8 py-5 text-center">
                     <span className="text-sm font-black text-primary">
                       {Number(product.totalOrderCount ?? 0).toLocaleString('ko-KR')}건                    </span>
-                  </td>
-                  <td className="px-8 py-5 text-center">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleOpenProductMarketDetail(product)
-                      }}
-                      className="rounded-full p-2 transition-colors hover:bg-surface-container"
-                    >
-                      <span className="material-symbols-outlined text-on-surface-variant">more_vert</span>
-                    </button>
                   </td>
                 </tr>
               ))}
@@ -1164,22 +1312,25 @@ export default function SalesStatus({ isExpanded }) {
             <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">오픈마켓별 비교</p>
-                <h3 className="mt-2 text-2xl font-black text-slate-900">{selectedProductMarketDetail.productName}</h3>
+                <h3 className="mt-2 text-2xl font-black text-slate-900">
+                  {getProductGroupMeta(selectedProductMarketDetail).groupName}
+                </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  SKU {selectedProductMarketDetail.externalProductId || '-'} · {metricPeriodLabel}
+                  {getProductGroupMeta(selectedProductMarketDetail).subLabel} · {metricPeriodLabel}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={closeProductMarketDetail}
-                className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+                aria-label="오픈마켓 비교 닫기"
+                className="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
               >
-                <span className="material-symbols-outlined">close</span>
+                <span className="material-symbols-outlined text-[22px] leading-none">close</span>
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">총 매출액</p>
                   <p className="mt-3 text-2xl font-black text-slate-900">{KRW(selectedProductMarketSummary.totalGrossAmount)}</p>
@@ -1192,38 +1343,7 @@ export default function SalesStatus({ isExpanded }) {
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">배송비 합계</p>
                   <p className="mt-3 text-2xl font-black text-slate-900">{KRW(selectedProductMarketSummary.totalShippingFee)}</p>
                 </div>
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">수익</p>
-                  <p className="mt-3 text-2xl font-black text-slate-900">{KRW(selectedProductMarketSummary.profitAmount)}</p>
-                </div>
               </div>
-
-              {selectedProductCostSnapshot && (
-                <section className="mb-6 rounded-3xl border border-slate-200 bg-slate-50/70 p-5">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h4 className="text-lg font-black text-slate-900">상품 공통 비용 기준</h4>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-500 shadow-sm">
-                      주문 {selectedProductMarketSummary.totalOrderCount.toLocaleString('ko-KR')}건 기준
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-7">
-                    {[
-                      ['판매가', selectedProductCostSnapshot.salePrice],
-                      ['원가', selectedProductCostSnapshot.costPrice],
-                      ['공급가', selectedProductCostSnapshot.supplyPrice],
-                      ['판관비', selectedProductCostSnapshot.sgnaCost],
-                      ['물류비', selectedProductCostSnapshot.logisticsCost],
-                      ['포장비', selectedProductCostSnapshot.packagingCost],
-                      ['기타 비용', selectedProductCostSnapshot.otherCost],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</p>
-                        <p className="mt-2 text-lg font-black text-slate-900">{KRW(value)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
 
               <section className="overflow-hidden rounded-3xl border border-slate-200">
                 <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
@@ -1267,7 +1387,11 @@ export default function SalesStatus({ isExpanded }) {
                               <div className="flex flex-col items-center">
                                 <span>{KRW(item.channelFeeAmount)}</span>
                                 <span className="text-[11px] text-slate-400">
-                                  {item.channelFeeType === 'FIXED' ? `고정 ${KRW(item.channelFeeValue)}` : `${Number(item.channelFeeValue ?? 0).toLocaleString('ko-KR')}%`}
+                                  {item.channelFeeType === 'MIXED'
+                                    ? '복합'
+                                    : item.channelFeeType === 'FIXED'
+                                      ? `고정 ${KRW(item.channelFeeValue)}`
+                                      : `${Number(item.channelFeeValue ?? 0).toLocaleString('ko-KR')}%`}
                                 </span>
                               </div>
                             </td>

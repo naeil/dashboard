@@ -9,6 +9,7 @@ public interface ShopSalesDTO {
     Long getShopId();
     String getShopName();
     String getShopCode();
+    String getColor();
     BigDecimal getTotalGrossAmount();
     BigDecimal getTotalDiscountAmount();
     BigDecimal getTotalNetRevenue();

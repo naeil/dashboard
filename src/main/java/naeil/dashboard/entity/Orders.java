@@ -49,6 +49,9 @@ public class Orders {
     @Column(name = "sku_cd", nullable = false, length = 100)
     private String skuCd;
 
+    @Column(name = "original_uniq", length = 50)
+    private String originalUniq;
+
     @Column(name = "gross_amt", precision = 18, scale = 2)
     @Builder.Default
     private BigDecimal grossAmt = BigDecimal.ZERO;
@@ -98,6 +101,7 @@ public class Orders {
             Long shopId,
             Long productId,
             String skuCd,
+            String originalUniq,
             BigDecimal grossAmt,
             BigDecimal discountAmt,
             BigDecimal shippingFee,
@@ -111,6 +115,7 @@ public class Orders {
         this.shopId = shopId;
         this.productId = productId;
         this.skuCd = skuCd;
+        this.originalUniq = originalUniq;
         this.grossAmt = grossAmt != null ? grossAmt : BigDecimal.ZERO;
         this.discountAmt = discountAmt != null ? discountAmt : BigDecimal.ZERO;
         this.shippingFee = shippingFee != null ? shippingFee : BigDecimal.ZERO;
@@ -123,6 +128,10 @@ public class Orders {
 
     public void clearCancelAmt() {
         this.cancelAmt = BigDecimal.ZERO;
+    }
+
+    public void updateCancelAmt(BigDecimal amount) {
+        this.cancelAmt = amount != null ? amount : BigDecimal.ZERO;
     }
 
     public void updateStatus(String status) {

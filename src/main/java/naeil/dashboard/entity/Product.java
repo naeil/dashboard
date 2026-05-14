@@ -42,6 +42,9 @@ public class Product {
     @Column(name = "product_name", nullable = false, length = 200)
     private String productName;
 
+    @Column(name = "product_group", length = 200)
+    private String productGroup;
+
     /** SKU 코드 */
     @Column(name = "sku_cd", length = 100)
     private String skuCd;

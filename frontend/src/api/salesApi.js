@@ -15,9 +15,12 @@ export const getSummary = (companyId, start, end, brandId) =>
 export const getProductSales = (companyId, start, end, brandId) =>
   api.get('/sales/product', { params: salesParams(companyId, start, end, brandId) })
 
-export const getProductMarketSales = (productId, companyId, start, end) =>
-  api.get(`/sales/product/${productId}/channels`, {
-    params: salesParams(companyId, start, end)
+export const getProductMarketSales = (productGroup, companyId, start, end) =>
+  api.get('/sales/product-group/channels', {
+    params: {
+      ...salesParams(companyId, start, end),
+      productGroup
+    }
   })
 
 export const getBrandSales = (companyId, start, end, brandId) =>

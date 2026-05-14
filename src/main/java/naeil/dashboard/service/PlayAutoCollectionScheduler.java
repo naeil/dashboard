@@ -3,6 +3,7 @@ package naeil.dashboard.service;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import naeil.dashboard.common.time.TimeZoneSupport;
 import naeil.dashboard.entity.IntegrationSetting;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -17,7 +18,7 @@ public class PlayAutoCollectionScheduler {
 
     @Scheduled(fixedDelayString = "${app.playauto.scheduler.fixed-delay-ms:600000}")
     public void runScheduledCollection() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeZoneSupport.nowUtc();
 
         for (IntegrationSetting setting : integrationSettingService.getActivePlayAutoSettings()) {
             try {

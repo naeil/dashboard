@@ -4,10 +4,10 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import naeil.dashboard.dto.BrandSalesDTO;
-import naeil.dashboard.dto.PlatformTrendSalesDTO;
 import naeil.dashboard.dto.ProductSalesDTO;
 import naeil.dashboard.dto.ProductMarketSalesDTO;
 import naeil.dashboard.dto.SalesSummaryAggregateDTO;
+import naeil.dashboard.dto.ShopTrendSalesRowDTO;
 import naeil.dashboard.dto.ShopBrandSalesDTO;
 import naeil.dashboard.dto.ShopSalesDTO;
 import naeil.dashboard.entity.DailySalesStats;
@@ -258,6 +258,7 @@ public interface DailySalesStatsRepository extends JpaRepository<DailySalesStats
         SELECT d.shopId AS shopId,
                s.shopName AS shopName,
                s.shopCode AS shopCode,
+               s.color AS color,
                ROUND(COALESCE(SUM(d.grossAmount), 0), 0) AS totalGrossAmount,
                ROUND(COALESCE(SUM(d.discountAmount), 0), 0) AS totalDiscountAmount,
                ROUND(COALESCE(SUM(d.netRevenue), 0), 0) AS totalNetRevenue,
@@ -267,7 +268,7 @@ public interface DailySalesStatsRepository extends JpaRepository<DailySalesStats
         WHERE d.companyId = :companyId
           AND (:brandId IS NULL OR d.brandId = :brandId)
           AND d.date BETWEEN :startDate AND :endDate
-        GROUP BY d.shopId, s.shopName, s.shopCode
+        GROUP BY d.shopId, s.shopName, s.shopCode, s.color
         ORDER BY totalGrossAmount DESC
         """)
     List<ShopSalesDTO> findSalesByShop(
@@ -304,20 +305,20 @@ public interface DailySalesStatsRepository extends JpaRepository<DailySalesStats
     );
 
     @Query("""
-        SELECT new naeil.dashboard.dto.PlatformTrendSalesDTO(
-                   CAST(function('date_trunc', :granularity, d.date) as LocalDate),
-                   s.platform,
-                   ROUND(SUM(d.netRevenue), 0)
-               )
+        SELECT CAST(function('date_trunc', :granularity, d.date) as LocalDate) AS date,
+               s.shopCode AS shopCode,
+               s.shopName AS shopName,
+               s.color AS color,
+               ROUND(SUM(d.netRevenue), 0) AS netRevenue
         FROM DailySalesStats d
         JOIN Shop s ON s.id = d.shopId
         WHERE d.companyId = :companyId
           AND (:brandId IS NULL OR d.brandId = :brandId)
           AND d.date BETWEEN :startDate AND :endDate
-        GROUP BY 1, 2
-        ORDER BY 1 ASC
+        GROUP BY 1, s.shopCode, s.shopName, s.color
+        ORDER BY 1 ASC, s.shopName ASC
         """)
-    List<PlatformTrendSalesDTO> findTrendByPlatform(
+    List<ShopTrendSalesRowDTO> findTrendByShop(
             @Param("companyId") Long companyId,
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate,

@@ -83,8 +83,6 @@ public class PlayAutoApiClient {
 
         String url = UriComponentsBuilder
                 .fromUriString("https://openapi.playauto.io/api/shops")
-                .queryParam("used", "true")
-                .queryParam("usable_shop", "true")
                 .toUriString();
 
         try {

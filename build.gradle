@@ -54,10 +54,16 @@ dependencies {
 }
 
 tasks.withType(Test).configureEach {
-	enabled = false
+    useJUnitPlatform()
 }
 
 compileJava.options.encoding = 'UTF-8'
 tasks.withType(JavaCompile) {
 	options.encoding = 'UTF-8'
+}
+
+tasks.register('verifyProductGroup', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'naeil.dashboard.ProductGroupVerificationRunner'
 }

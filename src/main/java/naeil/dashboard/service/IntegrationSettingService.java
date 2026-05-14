@@ -7,16 +7,20 @@ import java.util.List;
 import java.util.stream.Collectors;
 import naeil.dashboard.common.api.PlayAutoApiClient;
 import naeil.dashboard.common.exception.CustomException;
+import naeil.dashboard.common.time.TimeZoneSupport;
 import naeil.dashboard.dto.CollectionExecutionHistoryDto;
 import naeil.dashboard.dto.IntegrationSettingDto;
+import naeil.dashboard.dto.RegisteredOpenMarketDto;
 import naeil.dashboard.entity.CollectionExecutionHistory;
 import naeil.dashboard.entity.IntegrationSetting;
+import naeil.dashboard.entity.Shop;
 import naeil.dashboard.enums.CollectionExecutionStatus;
 import naeil.dashboard.enums.CollectionJobType;
 import naeil.dashboard.enums.CollectionUnit;
 import naeil.dashboard.enums.IntegrationType;
 import naeil.dashboard.repository.CollectionExecutionHistoryRepository;
 import naeil.dashboard.repository.IntegrationSettingRepository;
+import naeil.dashboard.repository.ShopRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,15 +35,18 @@ public class IntegrationSettingService {
 
     private final IntegrationSettingRepository settingRepository;
     private final CollectionExecutionHistoryRepository collectionExecutionHistoryRepository;
+    private final ShopRepository shopRepository;
     private final PlayAutoApiClient playAutoApiClient;
 
     public IntegrationSettingService(
             IntegrationSettingRepository settingRepository,
             CollectionExecutionHistoryRepository collectionExecutionHistoryRepository,
+            ShopRepository shopRepository,
             PlayAutoApiClient playAutoApiClient
     ) {
         this.settingRepository = settingRepository;
         this.collectionExecutionHistoryRepository = collectionExecutionHistoryRepository;
+        this.shopRepository = shopRepository;
         this.playAutoApiClient = playAutoApiClient;
     }
 
@@ -98,6 +105,12 @@ public class IntegrationSettingService {
                 .toList();
     }
 
+    public List<RegisteredOpenMarketDto> getRegisteredOpenMarkets(Long companyId) {
+        return shopRepository.findAllByCompanyIdOrderByShopNameAsc(companyId).stream()
+                .map(this::toRegisteredOpenMarketDto)
+                .toList();
+    }
+
     public boolean validateApiKey(IntegrationSettingDto.ValidateRequest request) {
         String apiKey = request.getApiKey();
         if (isBlank(apiKey)) {
@@ -124,6 +137,16 @@ public class IntegrationSettingService {
         return false;
     }
 
+    private RegisteredOpenMarketDto toRegisteredOpenMarketDto(Shop shop) {
+        return new RegisteredOpenMarketDto(
+                shop.getId(),
+                shop.getShopName(),
+                shop.getShopCode(),
+                shop.getColor(),
+                shop.getCreatedAt()
+        );
+    }
+
     @Transactional
     public IntegrationSettingDto.Response saveSetting(Long companyId, IntegrationSettingDto.SaveRequest request) {
         IntegrationSetting setting = settingRepository.findByCompanyIdAndIntegrationType(companyId, request.getIntegrationType())
@@ -132,7 +155,7 @@ public class IntegrationSettingService {
         setting.setApiKey(request.getApiKey());
         setting.setApiEmail(request.getEmail());
         setting.setApiPassword(request.getPassword());
-        setting.setAuthUpdatedAt(LocalDateTime.now());
+        setting.setAuthUpdatedAt(TimeZoneSupport.nowUtc());
         validateCollectionSettings(
                 request.getCollectionUnit(),
                 request.getCollectionValue(),
@@ -179,7 +202,7 @@ public class IntegrationSettingService {
         setting.setApiKey(request.getApiKey());
         setting.setApiEmail(request.getEmail());
         setting.setApiPassword(request.getPassword());
-        setting.setAuthUpdatedAt(LocalDateTime.now());
+        setting.setAuthUpdatedAt(TimeZoneSupport.nowUtc());
 
         if (request.getIntegrationType() == IntegrationType.PLAYAUTO) {
             TokenIssueResult tokenIssueResult = issuePlayAutoToken(
@@ -205,7 +228,7 @@ public class IntegrationSettingService {
                 request.getAutoCollectEnabled()
         );
         applyCollectionSettings(setting, request);
-        setting.setCollectionUpdatedAt(LocalDateTime.now());
+        setting.setCollectionUpdatedAt(TimeZoneSupport.nowUtc());
         IntegrationSetting saved = settingRepository.save(setting);
         return toResponse(saved);
     }
@@ -241,7 +264,7 @@ public class IntegrationSettingService {
 
     public CollectionWindow getPlayAutoCollectionWindow(Long companyId) {
         IntegrationSetting setting = getPlayAutoSetting(companyId);
-        LocalDate endDate = LocalDate.now();
+        LocalDate endDate = TimeZoneSupport.todayKst();
         LocalDate startDate = calculateStartDate(endDate, setting.getCollectionUnit(), setting.getCollectionValue());
         return new CollectionWindow(startDate, endDate);
     }
@@ -320,7 +343,7 @@ public class IntegrationSettingService {
 
         return new TokenIssueResult(
                 accessToken,
-                LocalDateTime.now().plus(PLAYAUTO_TOKEN_VALIDITY)
+                TimeZoneSupport.nowUtc().plus(PLAYAUTO_TOKEN_VALIDITY)
         );
     }
 
@@ -329,7 +352,7 @@ public class IntegrationSettingService {
             return true;
         }
 
-        LocalDateTime refreshThreshold = LocalDateTime.now().plus(PLAYAUTO_REFRESH_BUFFER);
+        LocalDateTime refreshThreshold = TimeZoneSupport.nowUtc().plus(PLAYAUTO_REFRESH_BUFFER);
         return !setting.getTokenExpiresAt().isAfter(refreshThreshold);
     }
 

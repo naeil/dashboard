@@ -10,6 +10,8 @@ public class SalesSummaryDTO {
     private final BigDecimal totalShippingFee;
     private final BigDecimal totalCancelAmount;
     private final Long cancelCount;
+    private final Long cancelStatusCount;
+    private final Long returnStatusCount;
     private final Long totalOrderCount;
     private final Long totalCustomerCount;
     private final BigDecimal profitAmount;
@@ -21,6 +23,8 @@ public class SalesSummaryDTO {
             BigDecimal totalShippingFee,
             BigDecimal totalCancelAmount,
             Long cancelCount,
+            Long cancelStatusCount,
+            Long returnStatusCount,
             Long totalOrderCount,
             Long totalCustomerCount,
             BigDecimal profitAmount
@@ -31,6 +35,8 @@ public class SalesSummaryDTO {
         this.totalShippingFee = totalShippingFee;
         this.totalCancelAmount = totalCancelAmount;
         this.cancelCount = cancelCount;
+        this.cancelStatusCount = cancelStatusCount;
+        this.returnStatusCount = returnStatusCount;
         this.totalOrderCount = totalOrderCount;
         this.totalCustomerCount = totalCustomerCount;
         this.profitAmount = profitAmount;
@@ -58,6 +64,14 @@ public class SalesSummaryDTO {
 
     public Long getCancelCount() {
         return cancelCount;
+    }
+
+    public Long getCancelStatusCount() {
+        return cancelStatusCount;
+    }
+
+    public Long getReturnStatusCount() {
+        return returnStatusCount;
     }
 
     public Long getTotalOrderCount() {

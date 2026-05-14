@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import naeil.dashboard.dto.CollectionExecutionHistoryDto;
 import naeil.dashboard.dto.IntegrationSettingDto;
+import naeil.dashboard.dto.RegisteredOpenMarketDto;
 import naeil.dashboard.enums.IntegrationType;
 import naeil.dashboard.service.IntegrationSettingService;
 import naeil.dashboard.service.PlayAutoCollectionService;
@@ -36,6 +37,11 @@ public class SettingsController {
     @GetMapping
     public ResponseEntity<List<IntegrationSettingDto.Response>> getSettings() {
         return ResponseEntity.ok(settingService.getSettingsByCompanyId(DEFAULT_COMPANY_ID));
+    }
+
+    @GetMapping("/shops")
+    public ResponseEntity<List<RegisteredOpenMarketDto>> getRegisteredOpenMarkets() {
+        return ResponseEntity.ok(settingService.getRegisteredOpenMarkets(DEFAULT_COMPANY_ID));
     }
 
     @PostMapping("/validate")

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import naeil.dashboard.common.time.TimeZoneSupport;
 import naeil.dashboard.enums.CollectionJobType;
 import naeil.dashboard.enums.IntegrationType;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,7 @@ public class PlayAutoCollectionService {
     }
 
     public void refreshTodayOrders(Long companyId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = TimeZoneSupport.todayKst();
         runOrderCollection(
                 companyId,
                 today,
@@ -54,7 +55,7 @@ public class PlayAutoCollectionService {
             String triggerLabel,
             String historyMessage
     ) {
-        LocalDateTime startedAt = LocalDateTime.now();
+        LocalDateTime startedAt = TimeZoneSupport.nowUtc();
         Long historyId = integrationSettingService.recordCollectionExecutionStarted(
                 companyId,
                 IntegrationType.PLAYAUTO,
@@ -93,14 +94,14 @@ public class PlayAutoCollectionService {
             playAutoSyncService.remapOrdersToResolvedProducts(companyId);
             playAutoSyncService.rebuildDailySalesStats(companyId);
 
-            LocalDateTime finishedAt = LocalDateTime.now();
+            LocalDateTime finishedAt = TimeZoneSupport.nowUtc();
             integrationSettingService.markOrderCollectionCompleted(companyId, finishedAt);
             integrationSettingService.markCollectionExecutionSucceeded(historyId, finishedAt, historyMessage);
             log.info("Completed {} PlayAuto order collection for company {}", triggerLabel, companyId);
         } catch (Exception e) {
             integrationSettingService.markCollectionExecutionFailed(
                     historyId,
-                    LocalDateTime.now(),
+                    TimeZoneSupport.nowUtc(),
                     buildFailureMessage(historyMessage, e)
             );
             throw e;
@@ -108,8 +109,8 @@ public class PlayAutoCollectionService {
     }
 
     public void runInventoryCollection(Long companyId, boolean automatic) {
-        LocalDateTime startedAt = LocalDateTime.now();
-        LocalDate today = startedAt.toLocalDate();
+        LocalDateTime startedAt = TimeZoneSupport.nowUtc();
+        LocalDate today = TimeZoneSupport.todayKst();
         LocalDate startDate = today.minusDays(1);
         LocalDate endDate = today;
         String triggerLabel = automatic ? "자동" : "수동";
@@ -141,14 +142,14 @@ public class PlayAutoCollectionService {
                     credentials.apiKey()
             );
 
-            LocalDateTime finishedAt = LocalDateTime.now();
+            LocalDateTime finishedAt = TimeZoneSupport.nowUtc();
             integrationSettingService.markInventoryCollectionCompleted(companyId, finishedAt);
             integrationSettingService.markCollectionExecutionSucceeded(historyId, finishedAt, historyMessage);
             log.info("Completed {} PlayAuto inventory collection for company {}", triggerLabel, companyId);
         } catch (Exception e) {
             integrationSettingService.markCollectionExecutionFailed(
                     historyId,
-                    LocalDateTime.now(),
+                    TimeZoneSupport.nowUtc(),
                     buildFailureMessage(historyMessage, e)
             );
             throw e;

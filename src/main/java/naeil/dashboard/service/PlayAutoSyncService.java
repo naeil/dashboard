@@ -18,11 +18,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import naeil.dashboard.common.api.PlayAutoApiClient;
 import naeil.dashboard.common.order.OrderStatusGroups;
+import naeil.dashboard.common.product.ProductGroupResolver;
+import naeil.dashboard.common.shop.ShopColorPalette;
+import naeil.dashboard.common.time.TimeZoneSupport;
 import naeil.dashboard.dto.PlayAutoStockConditionResponseDTO;
 import naeil.dashboard.dto.PlayAutoShopResponseDTO;
 import naeil.dashboard.entity.Brand;
 import naeil.dashboard.entity.Customer;
 import naeil.dashboard.entity.DailySalesStats;
+import naeil.dashboard.entity.OrderItem;
 import naeil.dashboard.entity.Orders;
 import naeil.dashboard.entity.Product;
 import naeil.dashboard.entity.ProductOutbound;
@@ -31,11 +35,13 @@ import naeil.dashboard.enums.IntegrationType;
 import naeil.dashboard.repository.BrandRepository;
 import naeil.dashboard.repository.CustomerRepository;
 import naeil.dashboard.repository.DailySalesStatsRepository;
+import naeil.dashboard.repository.OrderItemRepository;
 import naeil.dashboard.repository.OrdersRepository;
 import naeil.dashboard.repository.ProductRepository;
 import naeil.dashboard.repository.ProductOutboundRepository;
 import naeil.dashboard.repository.ShopRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +65,7 @@ public class PlayAutoSyncService {
     private final ProductRepository productRepository;
     private final ProductOutboundRepository productOutboundRepository;
     private final OrdersRepository ordersRepository;
+    private final OrderItemRepository orderItemRepository;
     private final CustomerRepository customerRepository;
     private final DailySalesStatsRepository statsRepository;
 
@@ -75,6 +82,12 @@ public class PlayAutoSyncService {
         PlayAutoShopResponseDTO[] shopDtos = playAutoApiClient.getShopInfo(token, apiKey);
 
         if (shopDtos != null && shopDtos.length > 0) {
+            List<Shop> companyShops = shopRepository.findAllByCompanyIdOrderByShopNameAsc(companyId);
+            Map<String, Shop> shopsByCode = new LinkedHashMap<>();
+            for (Shop shop : companyShops) {
+                shopsByCode.put(shop.getShopCode(), shop);
+            }
+
             Map<String, PlayAutoShopResponseDTO> uniqueShopsByCode = new HashMap<>();
             for (PlayAutoShopResponseDTO dto : shopDtos) {
                 String shopCode = blankToNull(dto.getShopCode());
@@ -91,18 +104,28 @@ public class PlayAutoSyncService {
                     continue;
                 }
 
-                Shop shop = shopRepository.findByCompanyIdAndShopCode(companyId, shopCode)
-                        .orElseGet(() -> Shop.builder()
+                Shop shop = shopsByCode.getOrDefault(
+                        shopCode,
+                        Shop.builder()
                                 .companyId(companyId)
                                 .shopCode(shopCode)
-                                .build());
+                                .build()
+                );
 
+                if (!shopsByCode.containsKey(shopCode)) {
+                    companyShops.add(shop);
+                    shopsByCode.put(shopCode, shop);
+                }
+
+                shop.setCompanyId(companyId);
                 shop.setShopCode(shopCode);
                 shop.setShopName(dto.getShopName());
                 shop.setPlatform(resolvePlatform(dto));
-                shopRepository.save(shop);
                 syncedCount++;
             }
+
+            ShopColorPalette.applySequentialColors(companyShops);
+            shopRepository.saveAll(companyShops);
             log.info("Successfully synced {} shops.", syncedCount);
         }
     }
@@ -125,7 +148,7 @@ public class PlayAutoSyncService {
             int skippedNewUnclassifiedBrandCount = 0;
             int zeroStockUpdatedCount = 0;
 
-            LocalDate collectionDate = LocalDate.now();
+            LocalDate collectionDate = TimeZoneSupport.todayKst();
             for (StockConditionAggregate item : aggregateStockConditionItems(stockData.getResults())) {
                 if (isBlank(item.skuCd()) || item.prodNo() == null) {
                     skippedMissingIdentityCount++;
@@ -153,6 +176,7 @@ public class PlayAutoSyncService {
                             .build();
 
                     newProduct.setProductName(item.prodName());
+                    newProduct.setProductGroup(ProductGroupResolver.resolve(item.prodName()));
                     newProduct.setSkuCd(item.skuCd());
                     newProduct.setProdNo(item.prodNo());
                     newProduct.setProductPrice(normalizeMoney(item.salePrice()));
@@ -175,6 +199,7 @@ public class PlayAutoSyncService {
                 }
 
                 existingProduct.setProductName(item.prodName());
+                existingProduct.setProductGroup(ProductGroupResolver.resolve(item.prodName()));
                 existingProduct.setSkuCd(item.skuCd());
                 existingProduct.setProdNo(item.prodNo());
                 existingProduct.setProductPrice(normalizeMoney(item.salePrice()));
@@ -262,7 +287,7 @@ public class PlayAutoSyncService {
         log.info("Starting PlayAuto Order Sync for company: {} [{} ~ {}]", companyId, sDate, eDate);
         JsonNode orderData = playAutoApiClient.getOrderList(token, apiKey, sDate, eDate);
         Map<String, Customer> customerCache = new HashMap<>();
-        Map<String, JsonNode> productSnapshotByUniq = buildOrderProductSnapshotMap(orderData);
+        Map<String, List<JsonNode>> productSnapshotsByUniq = buildOrderProductSnapshotMap(orderData);
         JsonNode orderResults = orderData != null ? orderData.path("results") : null;
 
         if (orderResults != null && orderResults.isArray()) {
@@ -271,7 +296,7 @@ public class PlayAutoSyncService {
                 boolean processed = processSingleOrder(
                         companyId,
                         node,
-                        productSnapshotByUniq.get(node.path("uniq").asText()),
+                        productSnapshotsByUniq.get(node.path("uniq").asText()),
                         customerCache
                 );
                 if (!processed) {
@@ -352,11 +377,12 @@ public class PlayAutoSyncService {
     private boolean processSingleOrder(
             Long companyId,
             JsonNode node,
-            JsonNode productSnapshot,
+            List<JsonNode> productSnapshots,
             Map<String, Customer> customerCache
     ) {
         String uniq = node.path("uniq").asText();
         String status = node.path("ord_status").asText();
+        JsonNode productSnapshot = choosePreferredProductSnapshot(productSnapshots);
         String resolvedSkuCd = resolveEffectiveOrderSkuCd(node, productSnapshot);
 
         Optional<Orders> existingOpt = ordersRepository.findByUniq(uniq);
@@ -374,10 +400,11 @@ public class PlayAutoSyncService {
             if (OrderStatusGroups.isCompletedReversalStatus(status)) {
                 // DB????용뮉 ?醫됲뇣 雅뚯눖揆????? '?띯뫁??袁⑥┷' ?怨밴묶嚥???쇰선??野껋럩??(??녿┛?????띯뫁???
                 // 筌띲끉??+), 雅뚯눖揆?癒?땾(+)???믪눘? 疫꿸퀡以?????띯뫁??-), ?띯뫁??癒?땾(+)??疫꿸퀡以??곷튊 ???롥첎? 筌띿쉸???덈뼄.
-                BigDecimal cancelAmt = parseBigDecimal(node.path("pay_amt"));
+                BigDecimal cancelAmt = resolveReversalAmount(companyId, node, order);
                 order.markAsReversed(status, cancelAmt);
                 ordersRepository.save(order);
             }
+            syncOrderItems(companyId, order, node, productSnapshots);
             reconcileStats(companyId, null, order);
             return true;
         }
@@ -387,16 +414,14 @@ public class PlayAutoSyncService {
             OrderStatsSnapshot previousSnapshot = OrderStatsSnapshot.from(existingOrder);
             Orders order = refreshExistingOrder(companyId, existingOrder, node, productSnapshot, resolvedSkuCd);
             if (OrderStatusGroups.isCompletedReversalStatus(status)) {
-                BigDecimal cancelAmt = parseBigDecimal(node.path("pay_amt"));
+                BigDecimal cancelAmt = resolveReversalAmount(companyId, node, order);
                 // ?띯뫁?????문 ?紐껊굡??野껋럩??pay_amt揶쎛 0??곗쨮 ?????삳뮉 野껋럩??첎? 筌띾‘?앲첋?嚥? ??野껋럩??疫꿸퀣????雅뚯눖揆??野껉퀣?ｆ묾?됰만???????몃빍??
-                if (cancelAmt.compareTo(BigDecimal.ZERO) <= 0) {
-                    cancelAmt = null; 
-                }
                 order.markAsReversed(status, cancelAmt);
             } else {
                 order.clearCancelAmt();
             }
             ordersRepository.save(order);
+            syncOrderItems(companyId, order, node, productSnapshots);
             reconcileStats(companyId, previousSnapshot, order);
         }
         return true;
@@ -431,13 +456,10 @@ public class PlayAutoSyncService {
         Long internalProductId = product.getId();
         Long brandId = product.getBrandId();
         LocalDateTime ordTime = parseDateTime(node.path("ord_time").asText());
-        LocalDateTime wdate = LocalDateTime.parse(node.path("wdate").asText(), DATETIME_FORMATTER);
-
-        JsonNode payTimeNode = node.path("pay_time");
-        LocalDateTime payTime = (payTimeNode.isMissingNode() || payTimeNode.asText().isEmpty())
-                ? null
-                : LocalDateTime.parse(payTimeNode.asText(), DATETIME_FORMATTER);
+        LocalDateTime wdate = parseDateTime(node.path("wdate").asText());
+        LocalDateTime payTime = parseDateTime(node.path("pay_time").asText());
         String uniq = node.path("uniq").asText();
+        String originalUniq = resolveOriginalUniq(node);
 
         Orders order = Orders.builder()
                 .uniq(uniq)
@@ -447,6 +469,7 @@ public class PlayAutoSyncService {
                 .productId(internalProductId)
                 .customerId(customer != null ? customer.getId() : null)
                 .skuCd(skuCd)
+                .originalUniq(originalUniq)
                 .grossAmt(grossAmt)
                 .discountAmt(discountAmt)
                 .shippingFee(shippingFee)
@@ -456,6 +479,8 @@ public class PlayAutoSyncService {
                 .wdate(wdate)
                 .payTime(payTime)
                 .build();
+
+        order.updateCancelAmt(resolveRevenueAnomalyCancelAmount(companyId, order));
 
         try {
             return new OrderSaveOutcome(ordersRepository.save(order), true);
@@ -496,12 +521,14 @@ public class PlayAutoSyncService {
         LocalDateTime ordTime = parseDateTime(node.path("ord_time").asText());
         LocalDateTime wdate = parseDateTime(node.path("wdate").asText());
         LocalDateTime payTime = parseDateTime(node.path("pay_time").asText());
+        String originalUniq = resolveOriginalUniq(node);
 
         order.refreshFromSync(
                 product.getBrandId(),
                 shop.getId(),
                 product.getId(),
                 resolvedSkuCd,
+                originalUniq,
                 grossAmt,
                 discountAmt,
                 shippingFee,
@@ -511,6 +538,7 @@ public class PlayAutoSyncService {
                 wdate,
                 node.path("ord_status").asText()
         );
+        order.updateCancelAmt(resolveRevenueAnomalyCancelAmount(companyId, order));
         return order;
     }
 
@@ -576,6 +604,119 @@ public class PlayAutoSyncService {
         });
     }
 
+    private String resolveOriginalUniq(JsonNode node) {
+        return firstNonBlank(
+                textOrNull(node.path("ori_uniq")),
+                textOrNull(node.path("org_uniq")),
+                textOrNull(node.path("original_uniq"))
+        );
+    }
+
+    private BigDecimal resolveReversalAmount(Long companyId, JsonNode node, Orders order) {
+        BigDecimal explicitCancelAmount = parseBigDecimal(node.path("cancel_amt"));
+        if (explicitCancelAmount.compareTo(BigDecimal.ZERO) > 0) {
+            return explicitCancelAmount;
+        }
+
+        BigDecimal payAmount = parseBigDecimal(node.path("pay_amt"));
+        if (payAmount.compareTo(BigDecimal.ZERO) > 0) {
+            return payAmount;
+        }
+
+        return findReferenceOrderForReversal(companyId, order)
+                .map(this::deriveDisplayAmountFromOrder)
+                .orElse(null);
+    }
+
+    private Optional<Orders> findReferenceOrderForReversal(Long companyId, Orders reversalOrder) {
+        String originalUniq = blankToNull(reversalOrder.getOriginalUniq());
+        if (originalUniq != null) {
+            Optional<Orders> originalOrder = ordersRepository.findByUniq(originalUniq)
+                    .filter(candidate -> OrderStatusGroups.isRevenueIncludedStatus(candidate.getOrdStatus()));
+            if (originalOrder.isPresent()) {
+                return originalOrder;
+            }
+        }
+
+        LocalDateTime referenceDateTime = reversalOrder.getOrdTime() != null
+                ? reversalOrder.getOrdTime()
+                : reversalOrder.getWdate();
+        if (referenceDateTime == null) {
+            return Optional.empty();
+        }
+
+        return ordersRepository.findRevenueCandidatesForReversal(
+                        companyId,
+                        reversalOrder.getUniq(),
+                        reversalOrder.getShopId(),
+                        reversalOrder.getProductId(),
+                        reversalOrder.getSkuCd(),
+                        referenceDateTime,
+                        OrderStatusGroups.REVENUE_INCLUDED_STATUSES,
+                        PageRequest.of(0, 10)
+                ).stream()
+                .findFirst();
+    }
+
+    private BigDecimal deriveDisplayAmountFromOrder(Orders order) {
+        if (order == null) {
+            return null;
+        }
+
+        BigDecimal grossAmount = order.getGrossAmt() != null ? order.getGrossAmt() : BigDecimal.ZERO;
+        if (grossAmount.compareTo(BigDecimal.ZERO) != 0) {
+            return grossAmount.abs();
+        }
+
+        BigDecimal payAmount = order.getPayAmt() != null ? order.getPayAmt() : BigDecimal.ZERO;
+        if (payAmount.compareTo(BigDecimal.ZERO) != 0) {
+            return payAmount.abs();
+        }
+
+        BigDecimal derivedAmount = calculateGrossAmount(order.getPayAmt(), order.getDiscountAmt(), order.getShippingFee());
+        if (derivedAmount.compareTo(BigDecimal.ZERO) != 0) {
+            return derivedAmount.abs();
+        }
+
+        return null;
+    }
+
+    private BigDecimal resolveRevenueAnomalyCancelAmount(Long companyId, Orders order) {
+        if (order == null || !OrderStatusGroups.isRevenueIncludedStatus(order.getOrdStatus())) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal netRevenue = resolveNetRevenue(order);
+        if (netRevenue.compareTo(BigDecimal.ZERO) >= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        if (hasExplicitReversalCounterpart(companyId, order)) {
+            return BigDecimal.ZERO;
+        }
+
+        return netRevenue.abs();
+    }
+
+    private boolean hasExplicitReversalCounterpart(Long companyId, Orders order) {
+        LocalDateTime salesBaseDateTime = resolveSalesBaseDateTime(order);
+        if (salesBaseDateTime == null) {
+            return false;
+        }
+
+        LocalDate day = salesBaseDateTime.toLocalDate();
+        return ordersRepository.existsCompletedReversalCandidate(
+                companyId,
+                order.getUniq(),
+                order.getShopId(),
+                order.getProductId(),
+                order.getSkuCd(),
+                TimeZoneSupport.startOfKstDayToUtc(day),
+                TimeZoneSupport.startOfNextKstDayToUtc(day),
+                OrderStatusGroups.COMPLETED_REVERSAL_STATUS_LIST
+        );
+    }
+
     private BigDecimal parseBigDecimal(JsonNode node) {
         if (node.isMissingNode() || node.isNull()) {
             return BigDecimal.ZERO;
@@ -592,7 +733,7 @@ public class PlayAutoSyncService {
             return null;
         }
         try {
-            return LocalDateTime.parse(value, DATETIME_FORMATTER);
+            return TimeZoneSupport.parseKstDateTimeToUtc(value, DATETIME_FORMATTER);
         } catch (Exception e) {
             return null;
         }
@@ -615,12 +756,20 @@ public class PlayAutoSyncService {
 
     private Shop resolveShop(Long companyId, String shopCode, String shopName) {
         return shopRepository.findByCompanyIdAndShopCode(companyId, shopCode)
+                .map(existingShop -> {
+                    if (isBlank(existingShop.getColor())) {
+                        existingShop.setColor(resolveShopColor(companyId, shopCode, shopName));
+                        return shopRepository.save(existingShop);
+                    }
+                    return existingShop;
+                })
                 .orElseGet(() -> shopRepository.save(
                         Shop.builder()
                                 .companyId(companyId)
                                 .shopCode(shopCode)
                                 .shopName(shopName)
                                 .platform(IntegrationType.fromShop(shopName, shopCode))
+                                .color(resolveShopColor(companyId, shopCode, shopName))
                                 .build()
                 ));
     }
@@ -663,20 +812,21 @@ public class PlayAutoSyncService {
                 .companyId(companyId)
                 .brandId(brand.getId())
                 .productName(productName)
+                .productGroup(ProductGroupResolver.resolve(productName))
                 .skuCd(blankToNull(skuCd))
                 .prodNo(prodNo)
                 .build());
     }
 
-    private Map<String, JsonNode> buildOrderProductSnapshotMap(JsonNode orderData) {
-        Map<String, JsonNode> productSnapshotByUniq = new HashMap<>();
+    private Map<String, List<JsonNode>> buildOrderProductSnapshotMap(JsonNode orderData) {
+        Map<String, List<JsonNode>> productSnapshotsByUniq = new HashMap<>();
         if (orderData == null) {
-            return productSnapshotByUniq;
+            return productSnapshotsByUniq;
         }
 
         JsonNode resultsProd = orderData.path("results_prod");
         if (!resultsProd.isArray()) {
-            return productSnapshotByUniq;
+            return productSnapshotsByUniq;
         }
 
         Map<String, List<JsonNode>> groupedByUniq = new HashMap<>();
@@ -688,20 +838,154 @@ public class PlayAutoSyncService {
             groupedByUniq.computeIfAbsent(uniq, key -> new ArrayList<>()).add(item);
         }
 
-        for (Map.Entry<String, List<JsonNode>> entry : groupedByUniq.entrySet()) {
-            productSnapshotByUniq.put(entry.getKey(), choosePreferredProductSnapshot(entry.getValue()));
-        }
-
-        return productSnapshotByUniq;
+        return groupedByUniq;
     }
 
     private JsonNode choosePreferredProductSnapshot(List<JsonNode> productSnapshots) {
+        if (productSnapshots == null || productSnapshots.isEmpty()) {
+            return null;
+        }
         for (JsonNode item : productSnapshots) {
             if (!isBlank(textOrNull(item.path("sku_cd")))) {
                 return item;
             }
         }
         return productSnapshots.get(0);
+    }
+
+    private void syncOrderItems(Long companyId, Orders order, JsonNode orderNode, List<JsonNode> productSnapshots) {
+        orderItemRepository.deleteByCompanyIdAndOrderUniq(companyId, order.getUniq());
+
+        List<OrderItem> orderItems = buildOrderItems(companyId, order, orderNode, productSnapshots);
+        if (!orderItems.isEmpty()) {
+            orderItemRepository.saveAll(orderItems);
+        }
+    }
+
+    private List<OrderItem> buildOrderItems(
+            Long companyId,
+            Orders order,
+            JsonNode orderNode,
+            List<JsonNode> productSnapshots
+    ) {
+        LocalDateTime salesBaseDateTime = resolveSalesBaseDateTime(order);
+        if (salesBaseDateTime == null) {
+            return List.of();
+        }
+
+        LocalDate orderDate = salesBaseDateTime.toLocalDate();
+        List<OrderItemSource> sources = buildOrderItemSources(companyId, order, orderNode, productSnapshots);
+        if (sources.isEmpty()) {
+            return List.of();
+        }
+
+        List<OrderItem> orderItems = new ArrayList<>();
+        for (OrderItemSource source : sources) {
+            orderItems.add(OrderItem.builder()
+                    .companyId(companyId)
+                    .orderUniq(order.getUniq())
+                    .shopId(order.getShopId())
+                    .brandId(source.product().getBrandId())
+                    .productId(source.product().getId())
+                    .orderDate(orderDate)
+                    .skuCd(blankToNull(source.skuCd()))
+                    .prodNo(source.prodNo())
+                    .productName(firstNonBlank(source.productName(), source.product().getProductName(), source.skuCd(), order.getUniq()))
+                    .ordOptSeq(source.ordOptSeq())
+                    .packUnit(source.packUnit())
+                    .optSaleCnt(source.optSaleCnt())
+                    .itemQuantity(source.itemQuantity())
+                    .build());
+        }
+
+        return orderItems;
+    }
+
+    private List<OrderItemSource> buildOrderItemSources(
+            Long companyId,
+            Orders order,
+            JsonNode orderNode,
+            List<JsonNode> productSnapshots
+    ) {
+        if (productSnapshots == null || productSnapshots.isEmpty()) {
+            return buildFallbackOrderItemSources(order);
+        }
+
+        Map<String, MutableOrderItemSource> aggregated = new LinkedHashMap<>();
+        for (JsonNode snapshot : productSnapshots) {
+            Long prodNo = parseLong(textOrNull(snapshot.path("prod_no")));
+            String skuCd = blankToNull(textOrNull(snapshot.path("sku_cd")));
+            String productName = firstNonBlank(
+                    textOrNull(snapshot.path("prod_name")),
+                    textOrNull(snapshot.path("ord_opt_name")),
+                    textOrNull(orderNode.path("shop_sale_name")),
+                    skuCd
+            );
+            int packUnit = parsePositiveInt(textOrNull(snapshot.path("pack_unit")), 1);
+            int optSaleCnt = parsePositiveInt(textOrNull(snapshot.path("opt_sale_cnt")), 1);
+            int itemQuantity = Math.max(1, packUnit * optSaleCnt);
+            Integer ordOptSeq = parseInteger(textOrNull(snapshot.path("ord_opt_seq")));
+
+            String key = prodNo != null
+                    ? "PROD:" + prodNo
+                    : !isBlank(skuCd)
+                    ? "SKU:" + skuCd
+                    : "NAME:" + productName;
+
+            MutableOrderItemSource aggregate = aggregated.computeIfAbsent(
+                    key,
+                    unused -> new MutableOrderItemSource(prodNo, skuCd, productName, ordOptSeq, snapshot)
+            );
+            aggregate.merge(packUnit, optSaleCnt, itemQuantity);
+        }
+
+        List<OrderItemSource> sources = new ArrayList<>();
+        for (MutableOrderItemSource aggregate : aggregated.values()) {
+            Product product = resolveOrCreateProduct(
+                    companyId,
+                    aggregate.prodNo,
+                    aggregate.skuCd,
+                    orderNode,
+                    aggregate.representativeSnapshot
+            );
+            sources.add(aggregate.toImmutable(product));
+        }
+        return sources;
+    }
+
+    private List<OrderItemSource> buildFallbackOrderItemSources(Orders order) {
+        if (order == null || order.getProductId() == null) {
+            return List.of();
+        }
+
+        return productRepository.findById(order.getProductId())
+                .map(product -> List.of(new OrderItemSource(
+                        product,
+                        product.getProdNo(),
+                        order.getSkuCd(),
+                        product.getProductName(),
+                        1,
+                        1,
+                        1,
+                        1
+                )))
+                .orElse(List.of());
+    }
+
+    private Integer parseInteger(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private int parsePositiveInt(String value, int fallback) {
+        Integer parsed = parseInteger(value);
+        return parsed != null && parsed > 0 ? parsed : fallback;
     }
 
     private BigDecimal resolveDiscountAmount(JsonNode node) {
@@ -801,7 +1085,7 @@ public class PlayAutoSyncService {
         today.setBrandId(product.getBrandId());
         today.setOutboundCount(outboundCount);
         today.setOutboundAccumSnapshot(currentAccum);
-        today.setCollectedAt(LocalDateTime.now());
+        today.setCollectedAt(TimeZoneSupport.nowUtc());
         productOutboundRepository.save(today);
     }
 
@@ -843,15 +1127,13 @@ public class PlayAutoSyncService {
                         .build());
 
         BigDecimal multiplier = BigDecimal.valueOf(direction);
-        if (OrderStatusGroups.isRevenueIncludedStatus(snapshot.ordStatus())) {
-            stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(snapshot).multiply(multiplier)));
-            stats.setDiscountAmount(stats.getDiscountAmount().add(snapshot.discountAmt().multiply(multiplier)));
-            stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(snapshot).multiply(multiplier)));
-            stats.setShippingFee(stats.getShippingFee().add(snapshot.shippingFee().multiply(multiplier)));
-            stats.setOrdererCount(Math.max(0, stats.getOrdererCount() + direction));
-        } else if (OrderStatusGroups.isCompletedReversalStatus(snapshot.ordStatus())) {
-            stats.setShippingFee(stats.getShippingFee().add(snapshot.shippingFee().multiply(multiplier)));
-            stats.setCancelAmount(stats.getCancelAmount().add(resolveCancelAmount(snapshot).multiply(multiplier)));
+        stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(snapshot).multiply(multiplier)));
+        stats.setDiscountAmount(stats.getDiscountAmount().add(snapshot.discountAmt().multiply(multiplier)));
+        stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(snapshot).multiply(multiplier)));
+        stats.setShippingFee(stats.getShippingFee().add(snapshot.shippingFee().multiply(multiplier)));
+        stats.setOrdererCount(Math.max(0, stats.getOrdererCount() + direction));
+        if (snapshot.cancelAmt().compareTo(BigDecimal.ZERO) > 0) {
+            stats.setCancelAmount(stats.getCancelAmount().add(snapshot.cancelAmt().multiply(multiplier)));
             stats.setCancelCount(Math.max(0, stats.getCancelCount() + direction));
         }
 
@@ -886,26 +1168,14 @@ public class PlayAutoSyncService {
                     .cancelCount(0)
                     .build());
 
-            if (OrderStatusGroups.isCompletedReversalStatus(order.getOrdStatus())) {
-                /*
-                 * The orders table stores the latest state for each order.
-                 * During a full stats rebuild, a cancelled/returned order should therefore
-                 * contribute cancellation metrics only instead of recreating a negative sale.
-                 * Otherwise partial backfills or status-only syncs can produce negative bars.
-                 */
-                stats.setShippingFee(stats.getShippingFee().add(order.getShippingFee()));
-                stats.setCancelAmount(stats.getCancelAmount().add(
-                        order.getCancelAmt() != null && order.getCancelAmt().compareTo(BigDecimal.ZERO) > 0
-                                ? order.getCancelAmt()
-                                : order.getPayAmt()
-                ));
+            stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(order)));
+            stats.setDiscountAmount(stats.getDiscountAmount().add(order.getDiscountAmt()));
+            stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(order)));
+            stats.setShippingFee(stats.getShippingFee().add(order.getShippingFee()));
+            stats.setOrdererCount(stats.getOrdererCount() + 1);
+            if (order.getCancelAmt() != null && order.getCancelAmt().compareTo(BigDecimal.ZERO) > 0) {
+                stats.setCancelAmount(stats.getCancelAmount().add(order.getCancelAmt()));
                 stats.setCancelCount(stats.getCancelCount() + 1);
-            } else if (OrderStatusGroups.isRevenueIncludedStatus(order.getOrdStatus())) {
-                stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(order)));
-                stats.setDiscountAmount(stats.getDiscountAmount().add(order.getDiscountAmt()));
-                stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(order)));
-                stats.setShippingFee(stats.getShippingFee().add(order.getShippingFee()));
-                stats.setOrdererCount(stats.getOrdererCount() + 1);
             }
         }
 
@@ -991,14 +1261,16 @@ public class PlayAutoSyncService {
         if (order == null) {
             return null;
         }
-        return order.getOrdTime() != null ? order.getOrdTime() : order.getWdate();
+        LocalDateTime source = order.getOrdTime() != null ? order.getOrdTime() : order.getWdate();
+        return TimeZoneSupport.utcToKst(source);
     }
 
     private LocalDateTime resolveSalesBaseDateTime(OrderStatsSnapshot snapshot) {
         if (snapshot == null) {
             return null;
         }
-        return snapshot.ordTime() != null ? snapshot.ordTime() : snapshot.wdate();
+        LocalDateTime source = snapshot.ordTime() != null ? snapshot.ordTime() : snapshot.wdate();
+        return TimeZoneSupport.utcToKst(source);
     }
 
     private BigDecimal resolveGrossAmount(Orders order) {
@@ -1060,12 +1332,22 @@ public class PlayAutoSyncService {
                                 .shopCode(DEFAULT_SHOP_CODE)
                                 .shopName(DEFAULT_SHOP_NAME)
                                 .platform(DEFAULT_PLATFORM)
+                                .color(resolveShopColor(companyId, DEFAULT_SHOP_CODE, DEFAULT_SHOP_NAME))
                                 .build()
                 ));
     }
 
     private IntegrationType resolvePlatform(PlayAutoShopResponseDTO dto) {
         return IntegrationType.fromShop(dto.getShopName(), blankToNull(dto.getShopCode()));
+    }
+
+    private String resolveShopColor(Long companyId, String shopCode, String shopName) {
+        String representativeColor = ShopColorPalette.resolveRepresentativeColor(shopCode, shopName);
+        if (representativeColor != null) {
+            return representativeColor;
+        }
+
+        return ShopColorPalette.nextPaletteColor(shopRepository.findAllByCompanyIdOrderByShopNameAsc(companyId));
     }
 
     private record OrderStatsSnapshot(
@@ -1182,6 +1464,62 @@ public class PlayAutoSyncService {
             LocalDateTime wdate,
             LocalDateTime mdate
     ) {
+    }
+
+    private record OrderItemSource(
+            Product product,
+            Long prodNo,
+            String skuCd,
+            String productName,
+            Integer ordOptSeq,
+            int packUnit,
+            int optSaleCnt,
+            int itemQuantity
+    ) {
+    }
+
+    private final class MutableOrderItemSource {
+        private final Long prodNo;
+        private final String skuCd;
+        private final String productName;
+        private final Integer ordOptSeq;
+        private final JsonNode representativeSnapshot;
+        private int packUnit;
+        private int optSaleCnt;
+        private int itemQuantity;
+
+        private MutableOrderItemSource(
+                Long prodNo,
+                String skuCd,
+                String productName,
+                Integer ordOptSeq,
+                JsonNode representativeSnapshot
+        ) {
+            this.prodNo = prodNo;
+            this.skuCd = skuCd;
+            this.productName = productName;
+            this.ordOptSeq = ordOptSeq;
+            this.representativeSnapshot = representativeSnapshot;
+        }
+
+        private void merge(int packUnit, int optSaleCnt, int itemQuantity) {
+            this.packUnit += packUnit;
+            this.optSaleCnt += optSaleCnt;
+            this.itemQuantity += itemQuantity;
+        }
+
+        private OrderItemSource toImmutable(Product product) {
+            return new OrderItemSource(
+                    product,
+                    prodNo,
+                    skuCd,
+                    productName,
+                    ordOptSeq,
+                    Math.max(1, packUnit),
+                    Math.max(1, optSaleCnt),
+                    Math.max(1, itemQuantity)
+            );
+        }
     }
 }
 
