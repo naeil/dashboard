@@ -90,7 +90,7 @@ docker compose up -d postgres redis
 ### 2. 백엔드 실행
 
 로컬에서 직접 실행:
-
+   
 ```bash
 # Windows
 .\gradlew.bat bootRun
