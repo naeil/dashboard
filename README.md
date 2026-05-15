@@ -29,7 +29,7 @@ PlayAuto 연동 데이터를 기반으로 매출, 상품 재고, 출고량, 수�
 - Flyway
 - Redis Cache
 - PostgreSQL
-
+    
 ### Frontend
 
 - React 19
