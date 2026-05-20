@@ -1,5 +1,5 @@
 # Naeil Dashboard
-
+test commit
 PlayAuto 연동 데이터를 기반으로 매출, 상품 재고, 출고량, 수집 설정을 관리하는 대시보드 프로젝트입니다.  
 백엔드는 Spring Boot, 프론트엔드는 Vite + React로 구성되어 있으며, PostgreSQL과 Redis를 함께 사용합니다.
 
@@ -29,7 +29,7 @@ PlayAuto 연동 데이터를 기반으로 매출, 상품 재고, 출고량, 수�
 - Flyway
 - Redis Cache
 - PostgreSQL
-
+    
 ### Frontend
 
 - React 19
@@ -90,7 +90,7 @@ docker compose up -d postgres redis
 ### 2. 백엔드 실행
 
 로컬에서 직접 실행:
-
+   
 ```bash
 # Windows
 .\gradlew.bat bootRun
