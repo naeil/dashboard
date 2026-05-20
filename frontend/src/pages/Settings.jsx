@@ -1,33 +1,55 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { buildApiUrl } from '../api/apiBase'
 import { authorizedFetch } from '../api/authApi'
-import { formatDateTimeKst as formatDateTimeKstValue, formatTimeKst, parseApiDateTime } from '../utils/dateTime'
+import { formatDateTimeKst, formatTimeKst, parseApiDateTime } from '../utils/dateTime'
 
 const SETTINGS_API_BASE = buildApiUrl('/settings/integrations')
-
-const AUTH_TAB = 'auth'
-const COLLECTION_TAB = 'collection'
-const MARKETPLACE_TAB = 'marketplace'
+const MARKETING_SETTINGS_API_BASE = buildApiUrl('/settings/integrations/marketing')
 
 const UNIT_OPTIONS = [
   { value: 'DAY', label: '일' },
   { value: 'WEEK', label: '주' },
-  { value: 'MONTH', label: '개월' },
+  { value: 'MONTH', label: '월' },
 ]
 
-const MARKET_OPTIONS = [
-  { value: 'NAVER_SMARTSTORE', label: '스마트스토어' },
+const OPEN_MARKET_OPTIONS = [
+  { value: 'NAVER_SMARTSTORE', label: '네이버 스마트스토어' },
   { value: 'COUPANG', label: '쿠팡' },
   { value: 'ELEVEN_STREET', label: '11번가' },
   { value: 'AUCTION', label: '옥션' },
-  { value: 'GMARKET', label: '지마켓' },
+  { value: 'GMARKET', label: 'G마켓' },
 ]
 
-const HISTORY_STATUS_LABELS = {
-  RUNNING: '실행 중',
-  SUCCESS: '성공',
-  FAILED: '실패',
-}
+const MARKETING_INTEGRATIONS = [
+  {
+    type: 'NAVER_SEARCH_API',
+    title: '네이버 검색 API',
+    description: '키워드 트렌드와 검색량 조회에 사용하는 인증 정보입니다.',
+    fields: [
+      { key: 'apiKey', label: 'Client ID', type: 'text', placeholder: '네이버 Client ID' },
+      { key: 'password', label: 'Client Secret', type: 'password', placeholder: '네이버 Client Secret' },
+    ],
+  },
+  {
+    type: 'NAVER_SEARCH_ADS',
+    title: '네이버 검색광고 API',
+    description: 'CPC 광고 성과 조회에 사용하는 인증 정보입니다.',
+    fields: [
+      { key: 'apiKey', label: 'Customer ID', type: 'text', placeholder: '검색광고 Customer ID' },
+      { key: 'email', label: 'Access License', type: 'text', placeholder: '검색광고 Access License' },
+      { key: 'password', label: 'Secret Key', type: 'password', placeholder: '검색광고 Secret Key' },
+    ],
+  },
+  {
+    type: 'META_ADS',
+    title: 'Meta Ads API',
+    description: 'Meta 광고 계정 연동에 사용하는 인증 정보입니다.',
+    fields: [
+      { key: 'apiKey', label: 'Ad Account ID', type: 'text', placeholder: 'act_1234567890 형태의 계정 ID' },
+      { key: 'password', label: 'Access Token', type: 'password', placeholder: 'Meta Access Token' },
+    ],
+  },
+]
 
 const HISTORY_STATUS_STYLES = {
   RUNNING: 'bg-sky-100 text-sky-700',
@@ -35,190 +57,258 @@ const HISTORY_STATUS_STYLES = {
   FAILED: 'bg-rose-100 text-rose-700',
 }
 
-const HISTORY_JOB_LABELS = {
+const HISTORY_STATUS_LABELS = {
+  RUNNING: '실행 중',
+  SUCCESS: '성공',
+  FAILED: '실패',
+}
+
+const JOB_TYPE_LABELS = {
   ORDER: '주문 수집',
-  INVENTORY: '재고/출고량 수집',
+  INVENTORY: '재고 수집',
 }
 
-const KST_TIME_ZONE = 'Asia/Seoul'
+const VIEW_TABS = [
+  { key: 'auth', label: '인증 정보' },
+  { key: 'collection', label: '수집 설정' },
+  { key: 'shops', label: '오픈마켓 등록 현황' },
+]
 
-const savedAtKstFormatter = new Intl.DateTimeFormat('ko-KR', {
-  timeZone: KST_TIME_ZONE,
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
-
-const dateTimeKstFormatter = new Intl.DateTimeFormat('sv-SE', {
-  timeZone: KST_TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
-
-function formatHistoryMessage(history) {
-  if (history.message === 'Backfilled from existing last order collection timestamp') {
-    return '저장된 마지막 주문 수집 시각을 기준으로 초기화되었습니다.'
-  }
-
-  if (history.message === 'Backfilled from existing last inventory collection timestamp') {
-    return '저장된 마지막 재고 수집 시각을 기준으로 초기화되었습니다.'
-  }
-
-  return history.message || '메시지가 없습니다.'
+const UNIT_LABEL_MAP = {
+  DAY: '일',
+  WEEK: '주',
+  MONTH: '월',
 }
 
-function toKstDate(value) {
-  return parseApiDateTime(value)
+function cx(...classes) {
+  return classes.filter(Boolean).join(' ')
 }
 
-function formatSavedAtKst(value) {
-  return formatTimeKst(value, {
-    timeZone: KST_TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
-
-function formatDateTimeKst(value) {
-  const date = toKstDate(value)
-  return date ? dateTimeKstFormatter.format(date) : formatDateTimeKstValue(value, { hour12: false })
-}
-
-function SelectField({ value, onChange, disabled = false, className = '', children }) {
+function SectionCard({ title, description, action, children }) {
   return (
-    <select
-      value={value}
-      onChange={onChange}
-      disabled={disabled}
-      style={{
-        appearance: 'none',
-        WebkitAppearance: 'none',
-        MozAppearance: 'none',
-        backgroundImage:
-          'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2718%27 height=%2718%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%230f172a%27 stroke-width=%272.2%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E")',
-        backgroundRepeat: 'no-repeat',
-        backgroundPosition: 'right 0.8rem center',
-        backgroundSize: '18px 18px',
-      }}
-      className={`${className} rounded-xl border border-slate-300 bg-white px-4 py-3 pr-12 text-sm font-semibold focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-        disabled ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'text-slate-900'
-      }`}
-    >
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-xl font-black text-slate-950 dark:text-slate-50">{title}</h2>
+          {description ? <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">{description}</p> : null}
+        </div>
+        {action}
+      </div>
       {children}
-    </select>
+    </section>
   )
 }
 
+function InputField({ label, type = 'text', value, placeholder, onChange }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-600">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+      />
+    </label>
+  )
+}
+
+function SelectField({ label, value, onChange, children }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-semibold text-slate-600">{label}</span>
+      <select
+        value={value}
+        onChange={onChange}
+        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+      >
+        {children}
+      </select>
+    </label>
+  )
+}
+
+function saveBadge(isReady, readyText = '저장됨', emptyText = '미설정') {
+  return (
+    <span
+      className={cx(
+        'rounded-full px-3 py-1 text-xs font-bold',
+        isReady ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500',
+      )}
+    >
+      {isReady ? readyText : emptyText}
+    </span>
+  )
+}
+
+function emptyMarketingForms() {
+  return {
+    NAVER_SEARCH_API: { apiKey: '', email: '', password: '' },
+    NAVER_SEARCH_ADS: { apiKey: '', email: '', password: '' },
+    META_ADS: { apiKey: '', email: '', password: '' },
+  }
+}
+
+function getSettingTimeLabel(setting, key) {
+  const value = setting?.[key]
+  if (!value) return '-'
+  return formatDateTimeKst(parseApiDateTime(value))
+}
+
 export default function Settings({ isExpanded }) {
-  const isHydratingPlayautoRef = useRef(false)
-  const isHydratingOpenMarketRef = useRef(false)
-
-  const [activeTab, setActiveTab] = useState(AUTH_TAB)
-
-  const [playautoKey, setPlayautoKey] = useState('')
-  const [playautoEmail, setPlayautoEmail] = useState('')
-  const [playautoPassword, setPlayautoPassword] = useState('')
-
-  const [collectionValue, setCollectionValue] = useState('')
-  const [collectionUnit, setCollectionUnit] = useState('DAY')
-  const [scheduleValue, setScheduleValue] = useState('')
-  const [scheduleUnit, setScheduleUnit] = useState('DAY')
-  const [autoCollectEnabled, setAutoCollectEnabled] = useState(true)
-
-  const [openMarketKey, setOpenMarketKey] = useState('')
-  const [selectedMarket, setSelectedMarket] = useState('')
-
-  const [isValidPlayauto, setIsValidPlayauto] = useState(false)
-  const [isValidOpenMarket, setIsValidOpenMarket] = useState(false)
-  const [isSavingAuth, setIsSavingAuth] = useState(false)
-  const [isSavingCollection, setIsSavingCollection] = useState(false)
-  const [isRunningOrderCollection, setIsRunningOrderCollection] = useState(false)
-  const [isSyncingShops, setIsSyncingShops] = useState(false)
-  const [authSavedAt, setAuthSavedAt] = useState(null)
-  const [collectionSavedAt, setCollectionSavedAt] = useState(null)
-  const [lastOrderCollectedAt, setLastOrderCollectedAt] = useState(null)
-  const [collectionHistory, setCollectionHistory] = useState([])
-  const [registeredOpenMarkets, setRegisteredOpenMarkets] = useState([])
+  const [activeView, setActiveView] = useState('auth')
   const [toast, setToast] = useState(null)
+  const [savingAuth, setSavingAuth] = useState(false)
+  const [savingCollection, setSavingCollection] = useState(false)
+  const [runningCollection, setRunningCollection] = useState(false)
+  const [syncingShops, setSyncingShops] = useState(false)
+  const [savingMarketingType, setSavingMarketingType] = useState(null)
+
+  const [playAuto, setPlayAuto] = useState({ apiKey: '', email: '', password: '' })
+  const [openMarket, setOpenMarket] = useState({ integrationType: 'NAVER_SMARTSTORE', apiKey: '' })
+  const [collection, setCollection] = useState({
+    collectionValue: '30',
+    collectionUnit: 'DAY',
+    scheduleValue: '1',
+    scheduleUnit: 'DAY',
+    autoCollectEnabled: true,
+  })
+  const [marketingForms, setMarketingForms] = useState(emptyMarketingForms)
+  const [settingsByType, setSettingsByType] = useState({})
+  const [history, setHistory] = useState([])
+  const [registeredShops, setRegisteredShops] = useState([])
+
+  const playAutoReady = useMemo(
+    () => Boolean(playAuto.apiKey && playAuto.email && playAuto.password),
+    [playAuto],
+  )
+
+  const openMarketReady = useMemo(
+    () => Boolean(openMarket.integrationType && openMarket.apiKey),
+    [openMarket],
+  )
+
+  const marketingReadyCount = useMemo(
+    () =>
+      MARKETING_INTEGRATIONS.filter((integration) => {
+        const form = marketingForms[integration.type]
+        return Boolean(form?.apiKey || form?.email || form?.password)
+      }).length,
+    [marketingForms],
+  )
+
+  const collectionReady = useMemo(
+    () =>
+      Number(collection.collectionValue) > 0 &&
+      (!collection.autoCollectEnabled || Number(collection.scheduleValue) > 0),
+    [collection],
+  )
+
+  const runningHistory = useMemo(
+    () => history.find((item) => item.jobType === 'ORDER' && item.status === 'RUNNING'),
+    [history],
+  )
+
+  const isOrderCollectionBusy = Boolean(runningCollection || runningHistory)
+  const connectedAuthCount = Number(playAutoReady) + Number(openMarketReady) + marketingReadyCount
+
+  const playAutoSetting = settingsByType.PLAYAUTO
+  const selectedOpenMarketSetting = settingsByType[openMarket.integrationType]
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type })
   }
 
-  const loadSettings = async () => {
+  const hydrateForms = (settings) => {
+    const nextSettingsByType = {}
+    settings.forEach((item) => {
+      nextSettingsByType[item.integrationType] = item
+    })
+    setSettingsByType(nextSettingsByType)
+
+    const playAutoSettingValue = nextSettingsByType.PLAYAUTO
+    if (playAutoSettingValue) {
+      setPlayAuto({
+        apiKey: playAutoSettingValue.apiKey || '',
+        email: playAutoSettingValue.email || '',
+        password: playAutoSettingValue.password || '',
+      })
+      setCollection({
+        collectionValue:
+          playAutoSettingValue.collectionValue != null ? String(playAutoSettingValue.collectionValue) : '30',
+        collectionUnit: playAutoSettingValue.collectionUnit || 'DAY',
+        scheduleValue:
+          playAutoSettingValue.scheduleValue != null ? String(playAutoSettingValue.scheduleValue) : '1',
+        scheduleUnit: playAutoSettingValue.scheduleUnit || 'DAY',
+        autoCollectEnabled: Boolean(playAutoSettingValue.autoCollectEnabled),
+      })
+    }
+
+    const openMarketSetting = settings.find((item) =>
+      OPEN_MARKET_OPTIONS.some((option) => option.value === item.integrationType),
+    )
+    if (openMarketSetting) {
+      setOpenMarket({
+        integrationType: openMarketSetting.integrationType || 'NAVER_SMARTSTORE',
+        apiKey: openMarketSetting.apiKey || '',
+      })
+    }
+
+    setMarketingForms({
+      NAVER_SEARCH_API: {
+        apiKey: nextSettingsByType.NAVER_SEARCH_API?.apiKey || '',
+        email: nextSettingsByType.NAVER_SEARCH_API?.email || '',
+        password: nextSettingsByType.NAVER_SEARCH_API?.password || '',
+      },
+      NAVER_SEARCH_ADS: {
+        apiKey: nextSettingsByType.NAVER_SEARCH_ADS?.apiKey || '',
+        email: nextSettingsByType.NAVER_SEARCH_ADS?.email || '',
+        password: nextSettingsByType.NAVER_SEARCH_ADS?.password || '',
+      },
+      META_ADS: {
+        apiKey: nextSettingsByType.META_ADS?.apiKey || '',
+        email: nextSettingsByType.META_ADS?.email || '',
+        password: nextSettingsByType.META_ADS?.password || '',
+      },
+    })
+  }
+
+  const loadPageData = async () => {
     try {
-      const [response, historyResponse, shopsResponse] = await Promise.all([
+      const [settingsResponse, marketingResponse, historyResponse, shopsResponse] = await Promise.all([
         authorizedFetch(SETTINGS_API_BASE),
+        authorizedFetch(MARKETING_SETTINGS_API_BASE),
         authorizedFetch(`${SETTINGS_API_BASE}/history?integrationType=PLAYAUTO&limit=10`),
         authorizedFetch(`${SETTINGS_API_BASE}/shops`),
       ])
 
-      if (!response.ok) return
-
-      const settings = await response.json()
-      const playauto = settings.find((item) => item.integrationType === 'PLAYAUTO')
-      const market = settings.find((item) => item.integrationType !== 'PLAYAUTO')
-
-      if (playauto) {
-        isHydratingPlayautoRef.current = true
-        setPlayautoKey(playauto.apiKey || '')
-        setPlayautoEmail(playauto.email || '')
-        setPlayautoPassword(playauto.password || '')
-        setCollectionValue(playauto.collectionValue != null ? String(playauto.collectionValue) : '')
-        setCollectionUnit(playauto.collectionUnit || 'DAY')
-        setScheduleValue(playauto.scheduleValue != null ? String(playauto.scheduleValue) : '')
-        setScheduleUnit(playauto.scheduleUnit || 'DAY')
-        setAutoCollectEnabled(Boolean(playauto.autoCollectEnabled))
-        setIsValidPlayauto(Boolean(playauto.apiKey))
-        setAuthSavedAt(toKstDate(playauto.authUpdatedAt))
-        setCollectionSavedAt(toKstDate(playauto.collectionUpdatedAt))
-        setLastOrderCollectedAt(toKstDate(playauto.lastOrderCollectedAt))
+      if (!settingsResponse.ok) {
+        throw new Error('설정 정보를 불러오지 못했습니다.')
+      }
+      if (!marketingResponse.ok) {
+        throw new Error('Marketing credentials could not be loaded.')
+      }
+      if (!historyResponse.ok) {
+        throw new Error('실행 이력을 불러오지 못했습니다.')
+      }
+      if (!shopsResponse.ok) {
+        throw new Error('오픈마켓 등록 현황을 불러오지 못했습니다.')
       }
 
-      if (market) {
-        isHydratingOpenMarketRef.current = true
-        setSelectedMarket(market.integrationType || '')
-        setOpenMarketKey(market.apiKey || '')
-        setIsValidOpenMarket(Boolean(market.apiKey))
-        if (market.authUpdatedAt && !playauto?.authUpdatedAt) {
-          setAuthSavedAt(toKstDate(market.authUpdatedAt))
-        }
-      }
-
-      if (historyResponse.ok) {
-        const history = await historyResponse.json()
-        setCollectionHistory(history || [])
-      }
-
-      if (shopsResponse.ok) {
-        const shops = await shopsResponse.json()
-        setRegisteredOpenMarkets(shops || [])
-      }
+      const settings = await settingsResponse.json()
+      const marketingSettings = await marketingResponse.json()
+      hydrateForms([...settings, ...marketingSettings])
+      setHistory(await historyResponse.json())
+      setRegisteredShops(await shopsResponse.json())
     } catch (error) {
-      showToast(error.message || '설정 정보를 불러오지 못했습니다.', 'error')
+      showToast(error.message || '설정 정보를 불러오는 중 오류가 발생했습니다.', 'error')
     }
   }
 
   useEffect(() => {
-    if (isHydratingPlayautoRef.current) {
-      isHydratingPlayautoRef.current = false
-      return
-    }
-    setIsValidPlayauto(false)
-  }, [playautoKey, playautoEmail, playautoPassword])
-
-  useEffect(() => {
-    if (isHydratingOpenMarketRef.current) {
-      isHydratingOpenMarketRef.current = false
-      return
-    }
-    setIsValidOpenMarket(false)
-  }, [openMarketKey, selectedMarket])
+    loadPageData()
+  }, [])
 
   useEffect(() => {
     if (!toast) return undefined
@@ -226,164 +316,101 @@ export default function Settings({ isExpanded }) {
     return () => window.clearTimeout(timeoutId)
   }, [toast])
 
-  useEffect(() => {
-    loadSettings()
-  }, [])
-
-  const applyAuthResponse = (responseBody) => {
-    if (responseBody.integrationType === 'PLAYAUTO') {
-      isHydratingPlayautoRef.current = true
-      setPlayautoKey(responseBody.apiKey || '')
-      setPlayautoEmail(responseBody.email || '')
-      setPlayautoPassword(responseBody.password || '')
-    } else {
-      isHydratingOpenMarketRef.current = true
-      setSelectedMarket(responseBody.integrationType || '')
-      setOpenMarketKey(responseBody.apiKey || '')
-    }
-
-    setAuthSavedAt(toKstDate(responseBody.authUpdatedAt) || new Date())
-  }
-
-  const applyCollectionResponse = (responseBody) => {
-    setCollectionValue(responseBody.collectionValue != null ? String(responseBody.collectionValue) : '')
-    setCollectionUnit(responseBody.collectionUnit || 'DAY')
-    setScheduleValue(responseBody.scheduleValue != null ? String(responseBody.scheduleValue) : '')
-    setScheduleUnit(responseBody.scheduleUnit || 'DAY')
-    setAutoCollectEnabled(Boolean(responseBody.autoCollectEnabled))
-    setCollectionSavedAt(toKstDate(responseBody.collectionUpdatedAt) || new Date())
-    setLastOrderCollectedAt(toKstDate(responseBody.lastOrderCollectedAt))
-  }
-
-  const handleValidate = async (integrationType, apiKey) => {
-    if (integrationType !== 'PLAYAUTO' && !integrationType) {
-      showToast('마켓을 먼저 선택해 주세요.', 'error')
-      return
-    }
-    if (!apiKey) {
-      showToast('API Key를 입력해 주세요.', 'error')
-      return
-    }
-
+  const saveAuth = async () => {
+    setSavingAuth(true)
     try {
-      const body = { integrationType, apiKey }
-      if (integrationType === 'PLAYAUTO') {
-        body.email = playautoEmail
-        body.password = playautoPassword
-      }
+      const requests = []
 
-      const response = await authorizedFetch(`${SETTINGS_API_BASE}/validate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}))
-        showToast(errorBody.message || '연동 검증에 실패했습니다.', 'error')
-        return
-      }
-
-      if (integrationType === 'PLAYAUTO') setIsValidPlayauto(true)
-      else setIsValidOpenMarket(true)
-
-      showToast('연동 검증이 완료되었습니다.')
-    } catch (error) {
-      showToast(error.message || '서버 연결 중 오류가 발생했습니다.', 'error')
-    }
-  }
-
-  const handleSaveAuth = async () => {
-    setIsSavingAuth(true)
-    try {
-      if (playautoKey || playautoEmail || playautoPassword) {
-        const response = await authorizedFetch(`${SETTINGS_API_BASE}/auth`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            integrationType: 'PLAYAUTO',
-            apiKey: playautoKey,
-            email: playautoEmail,
-            password: playautoPassword,
+      if (playAuto.apiKey || playAuto.email || playAuto.password) {
+        requests.push(
+          authorizedFetch(`${SETTINGS_API_BASE}/auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              integrationType: 'PLAYAUTO',
+              apiKey: playAuto.apiKey,
+              email: playAuto.email,
+              password: playAuto.password,
+            }),
           }),
-        })
+        )
+      }
 
+      if (openMarket.integrationType && openMarket.apiKey) {
+        requests.push(
+          authorizedFetch(`${SETTINGS_API_BASE}/auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              integrationType: openMarket.integrationType,
+              apiKey: openMarket.apiKey,
+            }),
+          }),
+        )
+      }
+
+      if (requests.length === 0) {
+        throw new Error('저장할 인증 정보를 먼저 입력해주세요.')
+      }
+
+      const responses = await Promise.all(requests)
+      for (const response of responses) {
         if (!response.ok) {
           const errorBody = await response.json().catch(() => ({}))
-          throw new Error(errorBody.message || 'PlayAuto 인증 정보 저장에 실패했습니다.')
+          throw new Error(errorBody.message || '인증 정보 저장에 실패했습니다.')
         }
-
-        applyAuthResponse(await response.json())
       }
 
-      if (selectedMarket && openMarketKey) {
-        const response = await authorizedFetch(`${SETTINGS_API_BASE}/auth`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            integrationType: selectedMarket,
-            apiKey: openMarketKey,
-          }),
-        })
-
-        if (!response.ok) {
-          const errorBody = await response.json().catch(() => ({}))
-          throw new Error(errorBody.message || '오픈마켓 인증 정보 저장에 실패했습니다.')
-        }
-
-        applyAuthResponse(await response.json())
-      }
-
-      showToast('인증 정보가 저장되었습니다.')
+      await loadPageData()
+      showToast('인증 정보를 저장했습니다.')
     } catch (error) {
       showToast(error.message || '인증 정보 저장에 실패했습니다.', 'error')
     } finally {
-      setIsSavingAuth(false)
+      setSavingAuth(false)
     }
   }
 
-  const handleSaveCollection = async () => {
-    setIsSavingCollection(true)
+  const saveCollection = async () => {
+    setSavingCollection(true)
     try {
       const response = await authorizedFetch(`${SETTINGS_API_BASE}/collection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionUnit,
-          collectionValue: Number(collectionValue),
-          scheduleUnit,
-          scheduleValue: Number(scheduleValue),
-          autoCollectEnabled,
+          collectionUnit: collection.collectionUnit,
+          collectionValue: Number(collection.collectionValue),
+          scheduleUnit: collection.scheduleUnit,
+          scheduleValue: Number(collection.scheduleValue),
+          autoCollectEnabled: collection.autoCollectEnabled,
         }),
       })
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
-        throw new Error(errorBody.message || '주문 수집 설정 저장에 실패했습니다.')
+        throw new Error(errorBody.message || '수집 설정 저장에 실패했습니다.')
       }
 
-      applyCollectionResponse(await response.json())
-      showToast('주문 수집 설정이 저장되었습니다.')
+      await loadPageData()
+      showToast('수집 설정을 저장했습니다.')
     } catch (error) {
-      showToast(error.message || '주문 수집 설정 저장에 실패했습니다.', 'error')
+      showToast(error.message || '수집 설정 저장에 실패했습니다.', 'error')
     } finally {
-      setIsSavingCollection(false)
+      setSavingCollection(false)
     }
   }
 
-  const handleRunOrderCollection = async () => {
-    if (isRunningOrderCollection) return
-    setIsRunningOrderCollection(true)
+  const runOrderCollection = async () => {
+    setRunningCollection(true)
     try {
       const response = await authorizedFetch(`${SETTINGS_API_BASE}/collection/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionUnit,
-          collectionValue: Number(collectionValue),
-          scheduleUnit,
-          scheduleValue: Number(scheduleValue),
-          autoCollectEnabled,
+          collectionUnit: collection.collectionUnit,
+          collectionValue: Number(collection.collectionValue),
+          scheduleUnit: collection.scheduleUnit,
+          scheduleValue: Number(collection.scheduleValue),
+          autoCollectEnabled: collection.autoCollectEnabled,
         }),
       })
 
@@ -392,18 +419,17 @@ export default function Settings({ isExpanded }) {
         throw new Error(errorBody.message || '주문 수집 실행에 실패했습니다.')
       }
 
-      await loadSettings()
-      showToast('주문 수집이 완료되었습니다.')
+      await loadPageData()
+      showToast('주문 수집을 실행했습니다.')
     } catch (error) {
       showToast(error.message || '주문 수집 실행에 실패했습니다.', 'error')
     } finally {
-      setIsRunningOrderCollection(false)
+      setRunningCollection(false)
     }
   }
 
-  const handleSyncShops = async () => {
-    if (isSyncingShops) return
-    setIsSyncingShops(true)
+  const syncShops = async () => {
+    setSyncingShops(true)
     try {
       const response = await authorizedFetch(`${SETTINGS_API_BASE}/shops/sync`, {
         method: 'POST',
@@ -411,536 +437,619 @@ export default function Settings({ isExpanded }) {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
-        throw new Error(errorBody.message || '오픈마켓 동기화에 실패했습니다.')
+        throw new Error(errorBody.message || '오픈마켓 목록 동기화에 실패했습니다.')
       }
 
-      await loadSettings()
-      showToast('오픈마켓 동기화가 완료되었습니다.')
+      await loadPageData()
+      showToast('오픈마켓 등록 현황을 동기화했습니다.')
     } catch (error) {
-      showToast(error.message || '오픈마켓 동기화에 실패했습니다.', 'error')
+      showToast(error.message || '오픈마켓 목록 동기화에 실패했습니다.', 'error')
     } finally {
-      setIsSyncingShops(false)
+      setSyncingShops(false)
     }
   }
 
-  const authReady = useMemo(
-    () => Boolean(playautoKey && playautoEmail && playautoPassword),
-    [playautoKey, playautoEmail, playautoPassword],
-  )
-  const collectionPeriodReady = useMemo(() => Number(collectionValue) > 0, [collectionValue])
-  const scheduleReady = useMemo(() => Number(scheduleValue) > 0, [scheduleValue])
-  const collectionReady = useMemo(
-    () => Boolean(authReady && collectionPeriodReady && (!autoCollectEnabled || scheduleReady)),
-    [authReady, collectionPeriodReady, autoCollectEnabled, scheduleReady],
-  )
-  const manualCollectionReady = useMemo(
-    () => Boolean(authReady && collectionPeriodReady),
-    [authReady, collectionPeriodReady],
-  )
-  const registeredColorCount = useMemo(
-    () => registeredOpenMarkets.filter((shop) => shop.color).length,
-    [registeredOpenMarkets],
-  )
+  const saveMarketingIntegration = async (integrationType) => {
+    const form = marketingForms[integrationType]
+    setSavingMarketingType(integrationType)
 
-  const renderSettingsTabButton = (tab, label) => {
-    const isActive = activeTab === tab
-    const savedAt = tab === AUTH_TAB ? authSavedAt : tab === COLLECTION_TAB ? collectionSavedAt : null
-    const isConfigured = tab === MARKETPLACE_TAB ? registeredOpenMarkets.length > 0 : Boolean(savedAt)
-    const statusLabel = tab === MARKETPLACE_TAB
-      ? (registeredOpenMarkets.length > 0 ? `${registeredOpenMarkets.length}개 등록` : '미등록')
-      : (isConfigured ? '저장됨' : '미설정')
+    try {
+      const validateResponse = await authorizedFetch(`${SETTINGS_API_BASE}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          integrationType,
+          apiKey: form.apiKey,
+          email: form.email,
+          password: form.password,
+        }),
+      })
 
-    return (
-      <button
-        type="button"
-        onClick={() => setActiveTab(tab)}
-        className={`text-left text-2xl font-black tracking-tight transition-colors ${
-          isActive ? 'text-slate-950' : 'text-slate-400 hover:text-slate-600'
-        }`}
-      >
-        <span>{label}</span>
-        <span
-          className={`ml-3 inline-flex rounded-full px-3 py-1 align-middle text-xs font-bold ${
-            isConfigured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-          }`}
-        >
-          {statusLabel}
-        </span>
-        {savedAt && (
-          <span className="ml-3 align-middle text-xs font-medium text-slate-400">
-            {formatSavedAtKst(savedAt)}
-          </span>
-        )}
-      </button>
-    )
+      if (!validateResponse.ok) {
+        const errorBody = await validateResponse.json().catch(() => ({}))
+        throw new Error(errorBody.message || '마케팅 인증 정보 연동 테스트에 실패했습니다.')
+      }
+
+      const response = await authorizedFetch(`${MARKETING_SETTINGS_API_BASE}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          integrationType,
+          apiKey: form.apiKey,
+          email: form.email,
+          password: form.password,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.message || '마케팅 인증 정보 저장에 실패했습니다.')
+      }
+
+      await loadPageData()
+      showToast('연동 테스트 후 마케팅 인증 정보를 저장했습니다.')
+    } catch (error) {
+      showToast(error.message || '마케팅 인증 정보 저장에 실패했습니다.', 'error')
+    } finally {
+      setSavingMarketingType(null)
+    }
   }
 
   return (
-    <main className={`min-h-screen p-8 transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-20'}`}>
-      {toast && (
+    <main
+      className={`min-h-screen bg-slate-50 p-4 transition-all duration-300 sm:p-6 lg:p-8 ${
+        isExpanded ? 'ml-72' : 'ml-20'
+      }`}
+    >
+      {toast ? (
         <div
-          className={`fixed right-6 top-6 z-50 flex items-center gap-3 rounded-xl px-6 py-4 font-bold text-white shadow-xl ${
-            toast.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'
-          }`}
+          className={cx(
+            'fixed right-6 top-6 z-50 rounded-xl px-5 py-3 text-sm font-bold text-white shadow-xl',
+            toast.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500',
+          )}
         >
-          <span className="material-symbols-outlined">
-            {toast.type === 'success' ? 'check_circle' : 'error'}
-          </span>
-          <span>{toast.message}</span>
+          {toast.message}
         </div>
-      )}
+      ) : null}
 
-      <div className="max-w-6xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-black tracking-tight text-slate-950">설정</h1>
-          <p className="mt-2 text-sm text-slate-500">인증 정보, 수집 설정, 오픈마켓 등록 현황을 한곳에서 관리합니다.</p>
-        </div>
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-slate-50">설정</h1>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
+            PlayAuto, 오픈마켓, 네이버, Meta 인증 정보와 주문 수집 설정을 한 곳에서 관리합니다.
+          </p>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="mb-8 border-b border-slate-200 pb-5">
-            <div className="overflow-x-auto">
-              <div className="flex min-w-max items-center gap-4">
-                {renderSettingsTabButton(AUTH_TAB, '인증 정보')}
-                <span className="text-3xl font-light text-slate-300">/</span>
-                {renderSettingsTabButton(COLLECTION_TAB, '수집 설정')}
-                <span className="text-3xl font-light text-slate-300">/</span>
-                {renderSettingsTabButton(MARKETPLACE_TAB, '오픈마켓 등록 현황')}
-              </div>
+          <div className="mt-6 border-b border-slate-200 pb-5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3 text-left">
+              <button
+                type="button"
+                onClick={() => setActiveView('auth')}
+                className={cx(
+                  'group inline-flex items-center gap-3 rounded-2xl px-4 py-2 transition',
+                  activeView === 'auth' ? 'bg-slate-950 text-white' : 'hover:bg-slate-100',
+                )}
+              >
+                <span className={cx('text-2xl font-black', activeView === 'auth' ? 'text-white' : 'text-slate-400')}>
+                  인증 정보
+                </span>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                  {playAutoReady || openMarketReady || marketingReadyCount > 0 ? '저장됨' : '미설정'}
+                </span>
+                <span className={cx('text-sm font-semibold', activeView === 'auth' ? 'text-slate-200' : 'text-slate-400')}>
+                  {connectedAuthCount}개 연동
+                </span>
+              </button>
+
+              <span className="hidden text-4xl font-thin text-slate-200 md:block">/</span>
+
+              <button
+                type="button"
+                onClick={() => setActiveView('collection')}
+                className={cx(
+                  'group inline-flex items-center gap-3 rounded-2xl px-4 py-2 transition',
+                  activeView === 'collection' ? 'bg-slate-950 text-white' : 'hover:bg-slate-100',
+                )}
+              >
+                <span
+                  className={cx(
+                    'text-2xl font-black',
+                    activeView === 'collection' ? 'text-white' : 'text-slate-400',
+                  )}
+                >
+                  수집 설정
+                </span>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                  {isOrderCollectionBusy ? '실행 중' : '저장됨'}
+                </span>
+                <span
+                  className={cx(
+                    'text-sm font-semibold',
+                    activeView === 'collection' ? 'text-slate-200' : 'text-slate-400',
+                  )}
+                >
+                  {collection.autoCollectEnabled
+                    ? `${collection.scheduleValue || '-'}${UNIT_LABEL_MAP[collection.scheduleUnit] || ''} 주기`
+                    : '수동 실행'}
+                </span>
+              </button>
+
+              <span className="hidden text-4xl font-thin text-slate-200 md:block">/</span>
+
+              <button
+                type="button"
+                onClick={() => setActiveView('shops')}
+                className={cx(
+                  'group inline-flex items-center gap-3 rounded-2xl px-4 py-2 transition',
+                  activeView === 'shops' ? 'bg-slate-950 text-white' : 'hover:bg-slate-100',
+                )}
+              >
+                <span className={cx('text-2xl font-black', activeView === 'shops' ? 'text-white' : 'text-slate-400')}>
+                  오픈마켓 등록 현황
+                </span>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                  {registeredShops.length}개 등록
+                </span>
+              </button>
             </div>
 
-            <p className="mt-4 text-sm text-slate-500">
-              {activeTab === AUTH_TAB
-                ? 'PlayAuto와 오픈마켓 연동 정보를 저장합니다.'
-                : activeTab === COLLECTION_TAB
-                  ? '주문 수집과 재고/출고량 수집을 각각 관리할 수 있습니다.'
-                  : 'PlayAuto에서 동기화된 오픈마켓 목록과 플랫폼 현황을 확인합니다.'}
+            <p className="mt-5 text-sm text-slate-500 dark:text-slate-300">
+              {activeView === 'auth'
+                ? `마지막 인증 저장: ${getSettingTimeLabel(playAutoSetting, 'authUpdatedAt')}`
+                : activeView === 'collection'
+                  ? `마지막 주문 수집: ${getSettingTimeLabel(playAutoSetting, 'lastOrderCollectedAt')}`
+                  : '현재 등록된 오픈마켓 리스트를 확인할 수 있습니다.'}
             </p>
-
-            <div className="mt-3 text-xs font-medium text-slate-400">
-              {activeTab === AUTH_TAB
-                ? authSavedAt
-                  ? `마지막 저장: ${formatSavedAtKst(authSavedAt)}`
-                  : '아직 인증 정보가 저장되지 않았습니다.'
-                : activeTab === COLLECTION_TAB
-                  ? collectionSavedAt
-                    ? `마지막 저장: ${formatSavedAtKst(collectionSavedAt)}`
-                    : '아직 수집 설정이 저장되지 않았습니다.'
-                  : registeredOpenMarkets.length > 0
-                    ? `등록된 오픈마켓 ${registeredOpenMarkets.length}개`
-                    : '아직 동기화된 오픈마켓이 없습니다.'}
-            </div>
           </div>
+        </header>
 
-          {activeTab === AUTH_TAB && (
-            <div className="space-y-8">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                <div className="mb-5 flex items-start justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">PlayAuto 인증 정보</h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      API Key, 이메일, 비밀번호를 입력한 뒤 연동 테스트를 진행해 주세요.
-                    </p>
+        {activeView === 'auth' ? (
+          <div className="space-y-6">
+            <SectionCard
+              title="인증 정보"
+              description="PlayAuto와 오픈마켓 연동 정보를 먼저 저장하고, 필요하면 네이버와 Meta 인증 정보까지 함께 관리합니다."
+              action={
+                <button
+                  type="button"
+                  onClick={saveAuth}
+                  disabled={savingAuth}
+                  className={cx(
+                    'rounded-xl px-5 py-3 text-sm font-bold transition',
+                    savingAuth
+                      ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                      : 'bg-slate-950 text-white hover:bg-slate-800',
+                  )}
+                >
+                  {savingAuth ? '저장 중...' : '인증 정보 저장'}
+                </button>
+              }
+            >
+              <div className="grid gap-6 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="mb-5 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900 dark:text-slate-50">PlayAuto 인증</h3>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
+                        마지막 저장: {getSettingTimeLabel(playAutoSetting, 'authUpdatedAt')}
+                      </p>
+                    </div>
+                    {saveBadge(playAutoReady)}
                   </div>
-                  <span
-                    className={`rounded-full px-4 py-2 text-xs font-bold ${
-                      isValidPlayauto ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {isValidPlayauto ? '검증 완료' : '미검증'}
-                  </span>
-                </div>
 
-                <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr_auto]">
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-600">API Key</label>
-                    <input
-                      type="password"
-                      value={playautoKey}
-                      onChange={(event) => setPlayautoKey(event.target.value)}
+                  <div className="grid gap-4">
+                    <InputField
+                      label="API Key"
+                      value={playAuto.apiKey}
                       placeholder="PlayAuto API Key"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      onChange={(event) =>
+                        setPlayAuto((current) => ({
+                          ...current,
+                          apiKey: event.target.value,
+                        }))
+                      }
                     />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-600">Email</label>
-                    <input
-                      type="email"
-                      value={playautoEmail}
-                      onChange={(event) => setPlayautoEmail(event.target.value)}
-                      placeholder="email@example.com"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    <InputField
+                      label="이메일"
+                      value={playAuto.email}
+                      placeholder="PlayAuto 로그인 이메일"
+                      onChange={(event) =>
+                        setPlayAuto((current) => ({
+                          ...current,
+                          email: event.target.value,
+                        }))
+                      }
                     />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-600">Password</label>
-                    <input
+                    <InputField
+                      label="비밀번호"
                       type="password"
-                      value={playautoPassword}
-                      onChange={(event) => setPlayautoPassword(event.target.value)}
-                      placeholder="Password"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      value={playAuto.password}
+                      placeholder="PlayAuto 비밀번호"
+                      onChange={(event) =>
+                        setPlayAuto((current) => ({
+                          ...current,
+                          password: event.target.value,
+                        }))
+                      }
                     />
-                  </div>
-
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => handleValidate('PLAYAUTO', playautoKey)}
-                      className="h-[50px] rounded-xl bg-slate-950 px-6 text-sm font-bold text-white transition-colors hover:bg-slate-800"
-                    >
-                      연동 테스트
-                    </button>
                   </div>
                 </div>
-              </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                <div className="mb-5 flex items-start justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">오픈마켓 통합</h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      오픈마켓 API Key 또는 Access Token을 입력하고 검증할 수 있습니다.
-                    </p>
-                  </div>
-                  <span
-                    className={`rounded-full px-4 py-2 text-xs font-bold ${
-                      isValidOpenMarket ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {isValidOpenMarket ? '검증 완료' : '미설정'}
-                  </span>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-[1.4fr_280px_auto]">
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-600">API Key / Access Token</label>
-                    <input
-                      type="password"
-                      value={openMarketKey}
-                      onChange={(event) => setOpenMarketKey(event.target.value)}
-                      placeholder="오픈마켓 Access Token 입력"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                    />
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="mb-5 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900 dark:text-slate-50">오픈마켓 등록 인증</h3>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
+                        마지막 저장: {getSettingTimeLabel(selectedOpenMarketSetting, 'authUpdatedAt')}
+                      </p>
+                    </div>
+                    {saveBadge(openMarketReady)}
                   </div>
 
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-600">마켓</label>
+                  <div className="grid gap-4">
                     <SelectField
-                      value={selectedMarket}
-                      onChange={(event) => setSelectedMarket(event.target.value)}
-                      className="w-full"
+                      label="오픈마켓"
+                      value={openMarket.integrationType}
+                      onChange={(event) =>
+                        setOpenMarket((current) => ({
+                          ...current,
+                          integrationType: event.target.value,
+                        }))
+                      }
                     >
-                      <option value="">마켓 선택</option>
-                      {MARKET_OPTIONS.map((option) => (
+                      {OPEN_MARKET_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
                         </option>
                       ))}
                     </SelectField>
-                  </div>
 
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => handleValidate(selectedMarket, openMarketKey)}
-                      className="h-[50px] rounded-xl bg-slate-950 px-6 text-sm font-bold text-white transition-colors hover:bg-slate-800"
-                    >
-                      연동 테스트
-                    </button>
+                    <InputField
+                      label="Access Token / API Key"
+                      value={openMarket.apiKey}
+                      placeholder="선택한 오픈마켓 인증키"
+                      onChange={(event) =>
+                        setOpenMarket((current) => ({
+                          ...current,
+                          apiKey: event.target.value,
+                        }))
+                      }
+                    />
                   </div>
                 </div>
               </div>
+            </SectionCard>
 
-              <div className="flex justify-end border-t border-slate-100 pt-6">
+            <SectionCard
+              title="네이버 / Meta 인증 정보"
+              description="마케팅 화면에서 사용하는 네이버 검색, 네이버 검색광고, Meta Ads 연동 정보를 각각 저장합니다."
+            >
+              <div className="grid gap-6 xl:grid-cols-3">
+                {MARKETING_INTEGRATIONS.map((integration) => {
+                  const form = marketingForms[integration.type]
+                  const setting = settingsByType[integration.type]
+
+                  return (
+                    <article
+                      key={integration.type}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
+                    >
+                      <div className="mb-5 flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg font-black text-slate-900 dark:text-slate-50">{integration.title}</h3>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">{integration.description}</p>
+                          <p className="mt-2 text-xs font-semibold text-slate-400 dark:text-slate-400">
+                            마지막 저장: {getSettingTimeLabel(setting, 'authUpdatedAt')}
+                          </p>
+                        </div>
+                        {saveBadge(Boolean(form.apiKey || form.email || form.password))}
+                      </div>
+
+                      <div className="space-y-4">
+                        {integration.fields.map((field) => (
+                          <InputField
+                            key={field.key}
+                            label={field.label}
+                            type={field.type}
+                            value={form[field.key] || ''}
+                            placeholder={field.placeholder}
+                            onChange={(event) =>
+                              setMarketingForms((current) => ({
+                                ...current,
+                                [integration.type]: {
+                                  ...current[integration.type],
+                                  [field.key]: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => saveMarketingIntegration(integration.type)}
+                        disabled={savingMarketingType === integration.type}
+                        className={cx(
+                          'mt-5 w-full rounded-xl px-4 py-3 text-sm font-bold transition',
+                          savingMarketingType === integration.type
+                            ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                            : 'bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-100',
+                        )}
+                      >
+                        {savingMarketingType === integration.type ? '저장 중...' : '이 인증 정보만 저장'}
+                      </button>
+                    </article>
+                  )
+                })}
+              </div>
+            </SectionCard>
+          </div>
+        ) : null}
+
+        {activeView === 'collection' ? (
+          <div className="space-y-6">
+            <SectionCard
+              title="수집 설정"
+              description="주문 수집 범위와 자동 수집 주기를 관리합니다. 자동 스케줄이 돌지 않는 시간에는 오늘 주문 새로고침으로 오늘 주문만 다시 수집할 수 있습니다."
+              action={
                 <button
                   type="button"
-                  onClick={handleSaveAuth}
-                  disabled={isSavingAuth || (!authReady && !(selectedMarket && openMarketKey))}
-                  className={`rounded-xl px-6 py-3 text-sm font-bold transition-all ${
-                    isSavingAuth || (!authReady && !(selectedMarket && openMarketKey))
+                  onClick={saveCollection}
+                  disabled={savingCollection}
+                  className={cx(
+                    'rounded-xl px-5 py-3 text-sm font-bold transition',
+                    savingCollection
                       ? 'cursor-not-allowed bg-slate-200 text-slate-400'
-                      : 'bg-slate-950 text-white hover:bg-slate-800'
-                  }`}
+                      : 'bg-slate-950 text-white hover:bg-slate-800',
+                  )}
                 >
-                  {isSavingAuth ? '저장 중...' : '인증 정보 저장'}
+                  {savingCollection ? '저장 중...' : '수집 설정 저장'}
                 </button>
-              </div>
-            </div>
-          )}
+              }
+            >
+              <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SelectField
+                    label="수집 범위 단위"
+                    value={collection.collectionUnit}
+                    onChange={(event) =>
+                      setCollection((current) => ({
+                        ...current,
+                        collectionUnit: event.target.value,
+                      }))
+                    }
+                  >
+                    {UNIT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </SelectField>
 
-          {activeTab === COLLECTION_TAB && (
-            <div className="space-y-8">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                <div className="mb-6 flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">주문 수집</h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      주문 수집 기간 기준으로 수동 실행할 수 있고, 자동 수집을 켜면 저장한 주기로 주문 데이터를 수집합니다.
-                    </p>
-                  </div>
+                  <InputField
+                    label="수집 범위 값"
+                    type="number"
+                    value={collection.collectionValue}
+                    placeholder="30"
+                    onChange={(event) =>
+                      setCollection((current) => ({
+                        ...current,
+                        collectionValue: event.target.value,
+                      }))
+                    }
+                  />
 
-                  <label className="flex items-center gap-3 rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-800">
+                  <SelectField
+                    label="자동 수집 주기 단위"
+                    value={collection.scheduleUnit}
+                    onChange={(event) =>
+                      setCollection((current) => ({
+                        ...current,
+                        scheduleUnit: event.target.value,
+                      }))
+                    }
+                  >
+                    {UNIT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </SelectField>
+
+                  <InputField
+                    label="자동 수집 주기 값"
+                    type="number"
+                    value={collection.scheduleValue}
+                    placeholder="1"
+                    onChange={(event) =>
+                      setCollection((current) => ({
+                        ...current,
+                        scheduleValue: event.target.value,
+                      }))
+                    }
+                  />
+
+                  <label className="sm:col-span-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                     <input
                       type="checkbox"
-                      checked={autoCollectEnabled}
-                      onChange={(event) => setAutoCollectEnabled(event.target.checked)}
-                      disabled={isRunningOrderCollection}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                      checked={collection.autoCollectEnabled}
+                      onChange={(event) =>
+                        setCollection((current) => ({
+                          ...current,
+                          autoCollectEnabled: event.target.checked,
+                        }))
+                      }
+                      className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-300"
                     />
-                    <span>주문 자동 수집 사용</span>
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">주문 자동 수집 사용</p>
+                      <p className="text-xs text-slate-500">설정한 주기마다 백그라운드 주문 수집을 허용합니다.</p>
+                    </div>
                   </label>
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <div className="rounded-2xl bg-white p-5">
-                    <label className="mb-3 block text-sm font-semibold text-slate-600">주문 수집 기간</label>
-                    <div className="flex flex-wrap gap-3">
-                      <input
-                        type="number"
-                        min="1"
-                        value={collectionValue}
-                        onChange={(event) => setCollectionValue(event.target.value)}
-                        disabled={isRunningOrderCollection}
-                        placeholder="값을 입력하세요"
-                        className={`w-32 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                          isRunningOrderCollection ? 'cursor-not-allowed bg-slate-100 text-slate-400' : ''
-                        }`}
-                      />
-                      <SelectField
-                        value={collectionUnit}
-                        onChange={(event) => setCollectionUnit(event.target.value)}
-                        disabled={isRunningOrderCollection}
-                        className="w-32"
-                      >
-                        {UNIT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <button
-                        type="button"
-                        onClick={handleRunOrderCollection}
-                        disabled={isRunningOrderCollection || !manualCollectionReady}
-                        className={`rounded-xl px-4 py-3 text-sm font-bold transition-all ${
-                          isRunningOrderCollection || !manualCollectionReady
-                            ? 'cursor-not-allowed bg-slate-200 text-slate-400'
-                            : 'bg-slate-950 text-white hover:bg-slate-800'
-                        }`}
-                      >
-                        {isRunningOrderCollection ? '수집 중...' : '수집 실행'}
-                      </button>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <h3 className="text-lg font-black text-slate-900 dark:text-slate-50">현재 상태</h3>
+                  <dl className="mt-4 space-y-3 text-sm text-slate-600">
+                    <div className="flex items-start justify-between gap-4">
+                      <dt className="font-semibold text-slate-500">마지막 주문 수집</dt>
+                      <dd className="text-right font-bold text-slate-900">
+                        {getSettingTimeLabel(playAutoSetting, 'lastOrderCollectedAt')}
+                      </dd>
                     </div>
-                    <p className="mt-3 text-sm text-slate-500">예: 3일, 2주, 6개월</p>
-                  </div>
-
-                  <div className="rounded-2xl bg-white p-5">
-                    <label className="mb-3 block text-sm font-semibold text-slate-600">주문 수집 주기</label>
-                    <div className="flex gap-3">
-                      <input
-                        type="number"
-                        min="1"
-                        value={scheduleValue}
-                        onChange={(event) => setScheduleValue(event.target.value)}
-                        disabled={!autoCollectEnabled || isRunningOrderCollection}
-                        placeholder="값을 입력하세요"
-                        className={`w-32 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                          autoCollectEnabled && !isRunningOrderCollection
-                            ? 'bg-white text-slate-900'
-                            : 'cursor-not-allowed bg-slate-100 text-slate-400'
-                        }`}
-                      />
-                      <SelectField
-                        value={scheduleUnit}
-                        onChange={(event) => setScheduleUnit(event.target.value)}
-                        disabled={!autoCollectEnabled || isRunningOrderCollection}
-                        className="w-32"
-                      >
-                        {UNIT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </SelectField>
+                    <div className="flex items-start justify-between gap-4">
+                      <dt className="font-semibold text-slate-500">마지막 설정 저장</dt>
+                      <dd className="text-right font-bold text-slate-900">
+                        {getSettingTimeLabel(playAutoSetting, 'collectionUpdatedAt')}
+                      </dd>
                     </div>
-                    <p className="mt-3 text-sm text-slate-500">
-                      {autoCollectEnabled
-                        ? '예: 1일마다, 1주마다, 1개월마다'
-                        : '자동 수집을 켜야 주기 설정이 적용됩니다.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-xl font-bold text-slate-900">최근 수집 실행 이력</div>
-                  <div className="text-xs text-slate-400">
-                    마지막 주문 수집 시각: {formatDateTimeKst(lastOrderCollectedAt)}
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  {collectionHistory.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-400">
-                      아직 저장된 수집 실행 이력이 없습니다.
+                    <div className="flex items-start justify-between gap-4">
+                      <dt className="font-semibold text-slate-500">현재 실행 상태</dt>
+                      <dd className="text-right">
+                        {isOrderCollectionBusy ? (
+                          <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-bold text-sky-700">
+                            실행 중
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                            대기 중
+                          </span>
+                        )}
+                      </dd>
                     </div>
-                  ) : (
-                    collectionHistory.map((history) => (
-                      <div key={history.id} className="rounded-xl border border-slate-200 px-4 py-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-semibold text-slate-800">
-                                {HISTORY_JOB_LABELS[history.jobType] || history.jobType}
-                              </span>
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                                  HISTORY_STATUS_STYLES[history.status] || 'bg-slate-100 text-slate-700'
-                                }`}
-                              >
-                                {HISTORY_STATUS_LABELS[history.status] || history.status}
-                              </span>
-                            </div>
-                            <p className="mt-2 text-sm text-slate-500">{formatHistoryMessage(history)}</p>
-                          </div>
-
-                          <div className="shrink-0 text-xs text-slate-400">
-                            <div>
-                              마지막 실행:{' '}
-                              {history.finishedAt
-                                ? formatDateTimeKst(history.finishedAt)
-                                : history.startedAt
-                                  ? formatDateTimeKst(history.startedAt)
-                                  : '-'}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end border-t border-slate-100 pt-6">
-                <button
-                  type="button"
-                  onClick={handleSaveCollection}
-                  disabled={isSavingCollection || isRunningOrderCollection || !collectionReady}
-                  className={`rounded-xl px-6 py-3 text-sm font-bold transition-all ${
-                    isSavingCollection || isRunningOrderCollection || !collectionReady
-                      ? 'cursor-not-allowed bg-slate-200 text-slate-400'
-                      : 'bg-slate-950 text-white hover:bg-slate-800'
-                  }`}
-                >
-                  {isSavingCollection ? '저장 중...' : '주문 수집 설정 저장'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === MARKETPLACE_TAB && (
-            <div className="space-y-8">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">오픈마켓 등록 현황</h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      PlayAuto 기준으로 동기화된 쇼핑몰 목록과 플랫폼 분류를 확인할 수 있습니다.
-                    </p>
-                  </div>
+                  </dl>
 
                   <button
                     type="button"
-                    onClick={handleSyncShops}
-                    disabled={isSyncingShops || !authReady}
-                    className={`rounded-xl px-5 py-3 text-sm font-bold transition-all ${
-                      isSyncingShops || !authReady
+                    onClick={runOrderCollection}
+                    disabled={isOrderCollectionBusy || !collectionReady}
+                    className={cx(
+                      'mt-5 w-full rounded-xl px-4 py-3 text-sm font-bold transition',
+                      isOrderCollectionBusy || !collectionReady
                         ? 'cursor-not-allowed bg-slate-200 text-slate-400'
-                        : 'bg-slate-950 text-white hover:bg-slate-800'
-                    }`}
+                        : 'bg-sky-500 text-white hover:bg-sky-600',
+                    )}
                   >
-                    {isSyncingShops ? '동기화 중...' : '오픈마켓 동기화'}
+                    {isOrderCollectionBusy ? '현재 수집이 실행 중입니다' : '지금 주문 수집 실행'}
                   </button>
                 </div>
-
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">등록된 마켓 수</p>
-                    <p className="mt-3 text-3xl font-black text-slate-900">
-                      {registeredOpenMarkets.length.toLocaleString('ko-KR')}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">색상 배정</p>
-                    <p className="mt-3 text-3xl font-black text-slate-900">
-                      {registeredColorCount.toLocaleString('ko-KR')}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">동기화 조건</p>
-                    <p className="mt-3 text-sm font-bold text-slate-900">
-                      {authReady ? 'PlayAuto 인증 정보 확인됨' : 'PlayAuto 인증 정보 필요'}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      인증 정보가 저장되어 있어야 오픈마켓 동기화를 실행할 수 있습니다.
-                    </p>
-                  </div>
-                </div>
               </div>
+            </SectionCard>
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <div className="border-b border-slate-100 px-6 py-4">
-                  <h4 className="text-lg font-bold text-slate-900">등록된 오픈마켓 목록</h4>
-                  <p className="mt-1 text-sm text-slate-500">동기화된 shop 정보 기준으로 정렬됩니다.</p>
-                </div>
-
-                {registeredOpenMarkets.length === 0 ? (
-                  <div className="px-6 py-16 text-center text-slate-500">
-                    표시할 오픈마켓이 없습니다. 인증 정보를 확인한 뒤 오픈마켓 동기화를 실행해 주세요.
+            <SectionCard
+              title="최근 수집 실행 이력"
+              description="현재 실행 상태와 최근 성공/실패 메시지를 확인할 수 있습니다."
+            >
+              <div className="space-y-4">
+                {history.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center text-sm text-slate-500">
+                    아직 저장된 실행 이력이 없습니다.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse">
-                      <thead className="bg-slate-50">
-                        <tr className="border-b border-slate-200">
-                          {['쇼핑몰명', '색상', '코드', '등록 시각'].map((label) => (
-                            <th
-                              key={label}
-                              className="whitespace-nowrap px-6 py-4 text-left text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400"
+                  history.map((item) => (
+                    <article
+                      key={item.id}
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-4"
+                    >
+                      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <h3 className="text-lg font-black text-slate-950 dark:text-slate-50">
+                              {JOB_TYPE_LABELS[item.jobType] || item.jobType}
+                            </h3>
+                            <span
+                              className={cx(
+                                'rounded-full px-3 py-1 text-xs font-bold',
+                                HISTORY_STATUS_STYLES[item.status] || 'bg-slate-100 text-slate-600',
+                              )}
                             >
-                              {label}
-                            </th>
-                          ))}
+                              {HISTORY_STATUS_LABELS[item.status] || item.status}
+                            </span>
+                          </div>
+
+                          <p className="mt-3 break-all whitespace-pre-wrap text-sm leading-7 text-slate-600 dark:text-slate-300">
+                            {item.message || '상세 메시지가 없습니다.'}
+                          </p>
+                        </div>
+
+                        <div className="shrink-0 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 xl:w-64">
+                          <p>
+                            시작: <span className="font-semibold text-slate-900">{formatDateTimeKst(item.startedAt)}</span>
+                          </p>
+                          <p className="mt-2">
+                            종료: <span className="font-semibold text-slate-900">{formatDateTimeKst(item.finishedAt)}</span>
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </SectionCard>
+          </div>
+        ) : null}
+
+        {activeView === 'shops' ? (
+          <div className="space-y-6">
+            <SectionCard
+              title="오픈마켓 등록 현황"
+              description="현재 연동된 오픈마켓 목록을 확인하고, PlayAuto 기준 메타데이터를 다시 동기화할 수 있습니다."
+              action={
+                <button
+                  type="button"
+                  onClick={syncShops}
+                  disabled={syncingShops}
+                  className={cx(
+                    'rounded-xl px-5 py-3 text-sm font-bold transition',
+                    syncingShops
+                      ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                      : 'bg-slate-950 text-white hover:bg-slate-800',
+                  )}
+                >
+                  {syncingShops ? '동기화 중...' : '오픈마켓 목록 동기화'}
+                </button>
+              }
+            >
+              {registeredShops.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-12 text-center text-sm text-slate-500">
+                  등록된 오픈마켓이 없습니다. 인증 정보를 저장한 뒤 동기화를 실행해주세요.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-2xl border border-slate-200">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
+                      <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-5 py-4">상점명</th>
+                          <th className="px-5 py-4">상점 코드</th>
+                          <th className="px-5 py-4">색상</th>
+                          <th className="px-5 py-4">등록 시각</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {registeredOpenMarkets.map((shop) => (
-                          <tr key={shop.shopId} className="bg-white">
-                            <td className="px-6 py-4 text-sm font-bold text-slate-900">{shop.shopName}</td>
-                            <td className="px-6 py-4">
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {registeredShops.map((shop) => (
+                          <tr key={shop.shopId}>
+                            <td className="px-5 py-4 font-semibold text-slate-900">{shop.shopName || '-'}</td>
+                            <td className="px-5 py-4">{shop.shopCode || '-'}</td>
+                            <td className="px-5 py-4">
                               <div className="flex items-center gap-3">
                                 <span
-                                  className="h-3 w-3 shrink-0 rounded-full border border-slate-200"
-                                  style={{ backgroundColor: shop.color || '#94A3B8' }}
-                                ></span>
-                                <span className="text-sm font-medium text-slate-600">{shop.color || '-'}</span>
+                                  className="h-3 w-3 rounded-full border border-slate-200"
+                                  style={{ backgroundColor: shop.color || '#cbd5e1' }}
+                                />
+                                <span>{shop.color || '-'}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-sm font-medium text-slate-600">{shop.shopCode}</td>
-                            <td className="px-6 py-4 text-sm text-slate-500">{formatDateTimeKst(shop.createdAt)}</td>
+                            <td className="px-5 py-4">{formatDateTimeKst(shop.createdAt)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        ) : null}
       </div>
     </main>
   )

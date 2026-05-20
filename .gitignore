@@ -40,3 +40,9 @@ frontend/.env.production.local
 .DS_Store
 Thumbs.db
 docs/
+
+# Local scratch / ad-hoc test folders
+/tmp/
+/test/
+/test-output/
+*.tmp

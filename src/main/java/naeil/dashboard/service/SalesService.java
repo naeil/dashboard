@@ -18,13 +18,8 @@ import naeil.dashboard.repository.OrderItemRepository;
 import naeil.dashboard.repository.OrdersRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import naeil.dashboard.common.shop.ShopColorPalette;
 @Service
 @RequiredArgsConstructor
@@ -32,20 +27,13 @@ import naeil.dashboard.common.shop.ShopColorPalette;
 public class SalesService {
 
     private static final String UNCLASSIFIED_BRAND_NAME = "\uBBF8\uBD84\uB958";
-    private static final Duration QUERY_REFRESH_DEDUP_WINDOW = Duration.ofSeconds(2);
 
     private final DailySalesStatsRepository salesRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrdersRepository ordersRepository;
     private final BrandRepository brandRepository;
-    private final PlayAutoSyncService playAutoSyncService;
-
-    private final Map<Long, Object> refreshLocks = new ConcurrentHashMap<>();
-    private final Map<Long, LocalDateTime> lastRefreshTimes = new ConcurrentHashMap<>();
 
     public SalesSummaryDTO getSummary(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {
-        refreshSalesStatsForQuery(companyId);
-
         SalesSummaryAggregateDTO summary = salesRepository.findSummary(companyId, startDate, endDate, brandId);
         OrderClaimStatusCountDTO claimStatusCounts = ordersRepository.countClaimStatusesInPeriod(
                 companyId,
@@ -76,7 +64,6 @@ public class SalesService {
     }
 
     public List<ProductSalesDTO> getProductSales(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {
-        refreshSalesStatsForQuery(companyId);
         return orderItemRepository.findSalesByProduct(
                 companyId,
                 startDate,
@@ -86,7 +73,6 @@ public class SalesService {
     }
 
     public List<BrandSalesDTO> getBrandSales(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {
-        refreshSalesStatsForQuery(companyId);
         return salesRepository.findSalesByBrand(companyId, startDate, endDate, brandId);
     }
 
@@ -96,17 +82,14 @@ public class SalesService {
             LocalDate startDate,
             LocalDate endDate
     ) {
-        refreshSalesStatsForQuery(companyId);
         return orderItemRepository.findSalesByProductGroupAndShop(companyId, productGroup, startDate, endDate);
     }
 
     public List<ShopSalesDTO> getShopSales(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {
-        refreshSalesStatsForQuery(companyId);
         return salesRepository.findSalesByShop(companyId, startDate, endDate, brandId);
     }
 
     public List<ShopBrandSalesDTO> getShopBrandSales(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {
-        refreshSalesStatsForQuery(companyId);
         return salesRepository.findSalesByShopBrand(companyId, startDate, endDate, brandId);
     }
 
@@ -117,8 +100,6 @@ public class SalesService {
             String granularity,
             Long brandId
     ) {
-        refreshSalesStatsForQuery(companyId);
-
         String pgGranularity = switch (granularity.toUpperCase()) {
             case "WEEK" -> "week";
             case "MONTH" -> "month";
@@ -145,30 +126,5 @@ public class SalesService {
                 .filter(brand -> !UNCLASSIFIED_BRAND_NAME.equals(brand.getBrandName().trim()))
                 .map(brand -> new BrandOptionDTO(brand.getId(), brand.getBrandName()))
                 .toList();
-    }
-
-    private void refreshSalesStatsForQuery(Long companyId) {
-        if (companyId == null) {
-            return;
-        }
-
-        LocalDateTime now = TimeZoneSupport.nowUtc();
-        LocalDateTime threshold = now.minus(QUERY_REFRESH_DEDUP_WINDOW);
-        LocalDateTime lastRefresh = lastRefreshTimes.get(companyId);
-        if (lastRefresh != null && !lastRefresh.isBefore(threshold)) {
-            return;
-        }
-
-        Object lock = refreshLocks.computeIfAbsent(companyId, unused -> new Object());
-        synchronized (lock) {
-            LocalDateTime refreshedAt = lastRefreshTimes.get(companyId);
-            if (refreshedAt != null && !refreshedAt.isBefore(threshold)) {
-                return;
-            }
-
-            playAutoSyncService.remapOrdersToResolvedProducts(companyId);
-            playAutoSyncService.rebuildDailySalesStats(companyId);
-            lastRefreshTimes.put(companyId, TimeZoneSupport.nowUtc());
-        }
     }
 }

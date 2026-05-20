@@ -1,7 +1,10 @@
 package naeil.dashboard.repository;
 
 import java.util.List;
+import java.util.Optional;
 import naeil.dashboard.entity.CollectionExecutionHistory;
+import naeil.dashboard.enums.CollectionExecutionStatus;
+import naeil.dashboard.enums.CollectionJobType;
 import naeil.dashboard.enums.IntegrationType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,5 +17,12 @@ public interface CollectionExecutionHistoryRepository extends JpaRepository<Coll
             Long companyId,
             IntegrationType integrationType,
             Pageable pageable
+    );
+
+    Optional<CollectionExecutionHistory> findFirstByCompanyIdAndIntegrationTypeAndJobTypeAndStatusOrderByStartedAtDesc(
+            Long companyId,
+            IntegrationType integrationType,
+            CollectionJobType jobType,
+            CollectionExecutionStatus status
     );
 }

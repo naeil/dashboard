@@ -31,6 +31,7 @@ public class IntegrationSettingService {
 
     private static final Duration PLAYAUTO_TOKEN_VALIDITY = Duration.ofHours(24);
     private static final Duration PLAYAUTO_REFRESH_BUFFER = Duration.ofMinutes(30);
+    private static final Duration RUNNING_COLLECTION_STALE_TIMEOUT = Duration.ofHours(6);
     private static final int DEFAULT_HISTORY_LIMIT = 10;
 
     private final IntegrationSettingRepository settingRepository;
@@ -105,6 +106,44 @@ public class IntegrationSettingService {
                 .toList();
     }
 
+
+    @Transactional
+    public boolean isOrderCollectionRunning(Long companyId) {
+        return getRunningOrderCollection(companyId).isPresent();
+    }
+
+    @Transactional
+    public java.util.Optional<CollectionExecutionHistory> getRunningOrderCollection(Long companyId) {
+        java.util.Optional<CollectionExecutionHistory> running = collectionExecutionHistoryRepository
+                .findFirstByCompanyIdAndIntegrationTypeAndJobTypeAndStatusOrderByStartedAtDesc(
+                        companyId,
+                        IntegrationType.PLAYAUTO,
+                        CollectionJobType.ORDER,
+                        CollectionExecutionStatus.RUNNING
+                );
+        if (running.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+
+        CollectionExecutionHistory history = running.get();
+        LocalDateTime now = TimeZoneSupport.nowUtc();
+        if (history.getFinishedAt() != null) {
+            history.setStatus(CollectionExecutionStatus.FAILED);
+            history.setMessage("Order collection state was normalized because it had a finished time while marked RUNNING.");
+            collectionExecutionHistoryRepository.save(history);
+            return java.util.Optional.empty();
+        }
+
+        if (history.getStartedAt().isBefore(now.minus(RUNNING_COLLECTION_STALE_TIMEOUT))) {
+            history.setStatus(CollectionExecutionStatus.FAILED);
+            history.setFinishedAt(now);
+            history.setMessage("Order collection was marked as failed because the RUNNING state exceeded the stale timeout.");
+            collectionExecutionHistoryRepository.save(history);
+            return java.util.Optional.empty();
+        }
+
+        return running;
+    }
     public List<RegisteredOpenMarketDto> getRegisteredOpenMarkets(Long companyId) {
         return shopRepository.findAllByCompanyIdOrderByShopNameAsc(companyId).stream()
                 .map(this::toRegisteredOpenMarketDto)
@@ -113,7 +152,7 @@ public class IntegrationSettingService {
 
     public boolean validateApiKey(IntegrationSettingDto.ValidateRequest request) {
         String apiKey = request.getApiKey();
-        if (isBlank(apiKey)) {
+        if (isBlank(apiKey) && request.getIntegrationType() != IntegrationType.NAVER_SEARCH_API) {
             return false;
         }
 
@@ -131,7 +170,19 @@ public class IntegrationSettingService {
                 || request.getIntegrationType() == IntegrationType.ELEVEN_STREET
                 || request.getIntegrationType() == IntegrationType.AUCTION
                 || request.getIntegrationType() == IntegrationType.GMARKET) {
-            return apiKey.length() > 5;
+            return apiKey != null && apiKey.length() > 5;
+        }
+
+        if (request.getIntegrationType() == IntegrationType.NAVER_SEARCH_API) {
+            return !isBlank(request.getApiKey()) && !isBlank(request.getPassword());
+        }
+
+        if (request.getIntegrationType() == IntegrationType.NAVER_SEARCH_ADS) {
+            return !isBlank(request.getApiKey()) && !isBlank(request.getEmail()) && !isBlank(request.getPassword());
+        }
+
+        if (request.getIntegrationType() == IntegrationType.META_ADS) {
+            return !isBlank(request.getApiKey()) && !isBlank(request.getPassword());
         }
 
         return false;
@@ -175,23 +226,7 @@ public class IntegrationSettingService {
         }
 
         IntegrationSetting saved = settingRepository.save(setting);
-        return new IntegrationSettingDto.Response(
-                saved.getIntegrationType(),
-                saved.getApiKey(),
-                saved.getApiEmail(),
-                saved.getApiPassword(),
-                saved.getIsActive(),
-                saved.getCollectionUnit(),
-                saved.getCollectionValue(),
-                saved.getScheduleUnit(),
-                saved.getScheduleValue(),
-                saved.getAutoCollectEnabled(),
-                saved.getLastCollectedAt(),
-                saved.getLastOrderCollectedAt(),
-                saved.getLastInventoryCollectedAt(),
-                saved.getAuthUpdatedAt(),
-                saved.getCollectionUpdatedAt()
-        );
+        return toResponse(saved);
     }
 
     @Transactional
@@ -435,3 +470,4 @@ public class IntegrationSettingService {
 
     private record TokenIssueResult(String accessToken, LocalDateTime expiresAt) {}
 }
+

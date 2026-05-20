@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDays,
   addMonths,
@@ -428,6 +428,7 @@ export default function SalesStatus({ isExpanded }) {
   const [productMarketSales, setProductMarketSales] = useState([])
   const [isProductMarketSalesLoading, setIsProductMarketSalesLoading] = useState(false)
   const [productMarketSalesError, setProductMarketSalesError] = useState(null)
+  const [dashboardReady, setDashboardReady] = useState(false)
   const [isRefreshingTodaySales, setIsRefreshingTodaySales] = useState(false)
   const [refreshNotice, setRefreshNotice] = useState(null)
   const [trendTooltip, setTrendTooltip] = useState({
@@ -510,8 +511,35 @@ export default function SalesStatus({ isExpanded }) {
   }, [companyId, customRange, customTrendGranularity, dailyDate, monthlyValue, selectedBrand, viewType, weeklyDate])
 
   useEffect(() => {
+    let cancelled = false
+
+    const bootstrapDashboard = async () => {
+      setDashboardReady(false)
+      setIsRefreshingTodaySales(true)
+
+      try {
+        await refreshTodaySales(companyId)
+      } catch (error) {
+        console.error('Initial today refresh failed:', error)
+      } finally {
+        if (!cancelled) {
+          setIsRefreshingTodaySales(false)
+          setDashboardReady(true)
+        }
+      }
+    }
+
+    bootstrapDashboard()
+
+    return () => {
+      cancelled = true
+    }
+  }, [companyId])
+
+  useEffect(() => {
+    if (!dashboardReady) return
     fetchAll()
-  }, [fetchAll])
+  }, [dashboardReady, fetchAll])
 
   useEffect(() => {
     const fetchBrands = async () => {
@@ -768,7 +796,7 @@ export default function SalesStatus({ isExpanded }) {
   ), [productMarketSales])
 
   return (
-    <main className={`min-h-screen p-8 transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-20'}`}>
+    <main className={`min-h-screen p-8 transition-all duration-300 ${isExpanded ? 'ml-72' : 'ml-20'}`}> 
       <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="mb-2 text-3xl font-black tracking-tight text-primary">매출 현황</h1>
@@ -842,13 +870,13 @@ export default function SalesStatus({ isExpanded }) {
       </div>
 
       <div className="mb-8 grid grid-cols-12 items-stretch gap-6">
-        <div className="relative col-span-12 flex min-h-[240px] flex-col justify-between overflow-hidden rounded-xl bg-primary p-8 text-on-primary lg:col-span-6">
+        <div className="relative col-span-12 self-start flex min-h-[240px] flex-col gap-6 overflow-hidden rounded-3xl border border-outline-variant/20 bg-surface-container-lowest p-8 shadow-[0_18px_40px_rgba(15,23,42,0.08)] lg:col-span-6">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium tracking-wide text-primary-fixed-dim">누적 총 매출액</span>
-              <span className="text-sm font-medium text-primary-fixed">({metricPeriodLabel})</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium tracking-wide text-on-surface-variant">누적 총 매출액</span>
+              <span className="text-sm font-medium text-primary">({metricPeriodLabel})</span>
               {viewType === 'DAY' && (
-                <label className="relative inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-white/10 text-primary-fixed transition-colors hover:bg-white/20">
+                <label className="relative inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-outline-variant/15 bg-surface-container text-primary transition-colors hover:bg-surface-container-high">
                   <span className="material-symbols-outlined text-[18px]">calendar_month</span>
                   <input
                     type="date"
@@ -860,7 +888,7 @@ export default function SalesStatus({ isExpanded }) {
                 </label>
               )}
               {viewType === 'WEEK' && (
-                <label className="relative inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-white/10 text-primary-fixed transition-colors hover:bg-white/20">
+                <label className="relative inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-outline-variant/15 bg-surface-container text-primary transition-colors hover:bg-surface-container-high">
                   <span className="material-symbols-outlined text-[18px]">calendar_month</span>
                   <input
                     type="date"
@@ -873,7 +901,7 @@ export default function SalesStatus({ isExpanded }) {
                 </label>
               )}
               {viewType === 'MONTH' && (
-                <label className="relative inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-white/10 text-primary-fixed transition-colors hover:bg-white/20">
+                <label className="relative inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-outline-variant/15 bg-surface-container text-primary transition-colors hover:bg-surface-container-high">
                   <span className="material-symbols-outlined text-[18px]">calendar_month</span>
                   <input
                     type="month"
@@ -890,10 +918,10 @@ export default function SalesStatus({ isExpanded }) {
                   type="button"
                   onClick={handleRefreshTodaySales}
                   disabled={isRefreshingTodaySales}
-                  className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-bold transition-colors ${
+                  className={`inline-flex h-10 items-center gap-1.5 rounded-full border border-outline-variant/15 px-4 text-xs font-bold transition-colors ${
                     isRefreshingTodaySales
-                      ? 'cursor-not-allowed bg-white/10 text-white/50'
-                      : 'bg-white/10 text-primary-fixed hover:bg-white/20'
+                      ? 'cursor-not-allowed bg-surface-container text-on-surface-variant/60'
+                      : 'bg-surface-container text-primary hover:bg-surface-container-high'
                   }`}
                 >
                   <span className={`material-symbols-outlined text-[16px] ${isRefreshingTodaySales ? 'animate-spin' : ''}`}>
@@ -903,13 +931,13 @@ export default function SalesStatus({ isExpanded }) {
                 </button>
               )}
             </div>
-            <h2 className={`mt-2 font-black leading-tight ${getAdaptiveAmountClass(summary?.totalGrossAmount, 'hero')}`}>
+            <h2 className={`mt-5 font-black leading-tight text-primary ${getAdaptiveAmountClass(summary?.totalGrossAmount, 'hero')}`}>
               {summary ? KRW(summary.totalGrossAmount) : '₩0'}
             </h2>
             {refreshNotice && (
               <p
                 className={`mt-3 text-xs font-semibold ${
-                  refreshNotice.type === 'success' ? 'text-emerald-300' : 'text-rose-300'
+                  refreshNotice.type === 'success' ? 'text-emerald-600' : 'text-rose-600'
                 }`}
               >
                 {refreshNotice.message}
@@ -917,40 +945,40 @@ export default function SalesStatus({ isExpanded }) {
             )}
           </div>
 
-          <div className="relative z-10 mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2 min-[1800px]:grid-cols-4">
-            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
-              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
+          <div className="relative z-10 mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 min-[1800px]:grid-cols-4">
+            <div className="flex min-h-[112px] flex-col justify-between rounded-3xl bg-surface-container px-6 py-5">
+              <p className="break-keep text-[0.8rem] font-semibold text-on-surface-variant lg:text-[0.86rem]">
                 배송비 제외 매출액
               </p>
-              <p className={`mt-4 w-full whitespace-nowrap font-black leading-none text-primary-fixed ${getAdaptiveAmountClass(summary?.totalNetRevenue)}`}>
+              <p className={`w-full whitespace-nowrap font-black leading-none text-primary ${getAdaptiveAmountClass(summary?.totalNetRevenue)}`}>
                 {summary ? KRW(summary.totalNetRevenue) : '₩0'}
               </p>
             </div>
-            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
-              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
+            <div className="flex min-h-[112px] flex-col justify-between rounded-3xl bg-surface-container px-6 py-5">
+              <p className="break-keep text-[0.8rem] font-semibold text-on-surface-variant lg:text-[0.86rem]">
                 배송비 합계
               </p>
-              <p className={`mt-4 w-full whitespace-nowrap font-black leading-none text-primary-fixed ${getAdaptiveAmountClass(summary?.totalShippingFee)}`}>
+              <p className={`w-full whitespace-nowrap font-black leading-none text-primary ${getAdaptiveAmountClass(summary?.totalShippingFee)}`}>
                 {summary ? KRW(summary.totalShippingFee) : '₩0'}
               </p>
             </div>
-            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
-              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">수익</p>
-              <p className={`mt-4 w-full whitespace-nowrap font-black leading-none text-primary-fixed ${getAdaptiveAmountClass(summary?.profitAmount)}`}>
+            <div className="flex min-h-[112px] flex-col justify-between rounded-3xl bg-surface-container px-6 py-5">
+              <p className="break-keep text-[0.8rem] font-semibold text-on-surface-variant lg:text-[0.86rem]">수익</p>
+              <p className={`w-full whitespace-nowrap font-black leading-none text-primary ${getAdaptiveAmountClass(summary?.profitAmount)}`}>
                 {summary ? KRW(summary.profitAmount) : '₩0'}
               </p>
             </div>
-            <div className="flex min-h-[92px] flex-col rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
-              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
+            <div className="flex min-h-[112px] flex-col justify-between rounded-3xl bg-surface-container px-6 py-5">
+              <p className="break-keep text-[0.8rem] font-semibold text-on-surface-variant lg:text-[0.86rem]">
                 {growthInfo.label}
               </p>
               <p
-                className={`mt-4 flex items-center text-[0.9rem] font-black leading-none sm:text-[1rem] lg:text-[1.1rem] xl:text-[1.24rem] 2xl:text-[1.42rem] ${
+                className={`flex items-center text-[0.9rem] font-black leading-none sm:text-[1rem] lg:text-[1.1rem] xl:text-[1.24rem] 2xl:text-[1.42rem] ${
                   growthInfo.value === null
-                    ? 'text-slate-300'
+                    ? 'text-on-surface-variant'
                     : growthInfo.value >= 0
-                      ? 'text-green-400'
-                      : 'text-rose-300'
+                      ? 'text-emerald-600'
+                      : 'text-rose-600'
                 }`}
               >
                 {growthInfo.value !== null && (
@@ -964,20 +992,18 @@ export default function SalesStatus({ isExpanded }) {
           </div>
         </div>
 
-        <div className="col-span-12 grid grid-cols-2 gap-4 lg:col-span-6">
-          <div className="flex flex-col justify-between rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="mb-1 block text-xs font-semibold text-on-surface-variant">광고 환산 매출액</span>
-                <p className="text-xl font-bold text-slate-400">-</p>
-              </div>
+        <div className="col-span-12 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-6">
+          <div className="flex min-h-[110px] flex-col justify-center rounded-3xl border border-outline-variant/10 bg-surface-container-lowest p-4 shadow-sm">
+            <div className="space-y-4">
+              <span className="block text-xs font-semibold text-on-surface-variant">광고 환산 매출액</span>
+              <p className="text-[1.55rem] font-black leading-tight text-primary sm:text-[1.7rem]">-</p>
             </div>
           </div>
 
-          <div className="flex flex-col justify-between rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-5">
-            <div>
-              <span className="mb-1 block text-xs font-semibold text-on-surface-variant">객단가</span>
-              <p className="text-xl font-bold text-primary">
+          <div className="flex min-h-[110px] flex-col justify-center rounded-3xl border border-outline-variant/10 bg-surface-container-lowest p-4 shadow-sm">
+            <div className="space-y-4">
+              <span className="block text-xs font-semibold text-on-surface-variant">객단가</span>
+              <p className="text-[1.55rem] font-black leading-tight text-primary sm:text-[1.7rem]">
                 {summary && Number(summary.totalCustomerCount ?? 0) > 0
                   ? KRW(Number(summary.totalGrossAmount ?? 0) / Number(summary.totalCustomerCount ?? 0))
                   : '₩0'}
@@ -985,32 +1011,31 @@ export default function SalesStatus({ isExpanded }) {
             </div>
           </div>
 
-          <div className="flex flex-col justify-between rounded-xl border border-rose-100 bg-rose-50/50 p-5">
-            <div>
-              <div className="flex items-start justify-between">
-                <span className="mb-1 block text-xs font-semibold text-rose-600">취소 / 반품 현황</span>
-              </div>
-              <p className="text-xl font-bold text-rose-700">
+          <div className="flex min-h-[110px] flex-col justify-center rounded-3xl border border-rose-100 bg-rose-50/50 p-4 shadow-sm">
+            <div className="space-y-4">
+              <span className="block text-xs font-semibold text-rose-600">취소 / 반품 현황</span>
+              <p className="break-keep text-[1.5rem] font-black leading-tight text-rose-700 sm:text-[1.65rem]">
                 취소 {Number(summary?.cancelStatusCount ?? 0).toLocaleString('ko-KR')}건 / 반품 {Number(summary?.returnStatusCount ?? 0).toLocaleString('ko-KR')}건
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col justify-between rounded-xl border border-orange-100 bg-orange-50/50 p-5">
-            <div>
-              <span className="mb-1 block text-xs font-semibold text-orange-600">주문고객 / 주문건수</span>
+          <div className="flex min-h-[110px] flex-col justify-center rounded-3xl border border-orange-100 bg-orange-50/50 p-4 shadow-sm">
+            <div className="space-y-4">
+              <span className="block text-xs font-semibold text-orange-600">주문고객 / 주문건수</span>
+              <p className="break-keep text-[1.5rem] font-black leading-tight text-orange-700 sm:text-[1.65rem]">
+                {(summary?.totalCustomerCount || 0).toLocaleString('ko-KR')}명 / {(summary?.totalOrderCount || 0).toLocaleString('ko-KR')}건
+              </p>
             </div>
-            <p className="text-xl font-bold text-orange-700">
-              {(summary?.totalCustomerCount || 0).toLocaleString('ko-KR')}명/ {(summary?.totalOrderCount || 0).toLocaleString('ko-KR')}건            </p>
           </div>
 
-          <div className="col-span-2 flex items-center justify-between rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
+          <div className="col-span-1 flex min-h-[92px] items-center rounded-3xl border border-outline-variant/20 bg-surface-container-low p-4 shadow-sm sm:col-span-2">
             <div className="flex items-center space-x-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white">
                 <span className="material-symbols-outlined">insights</span>
               </div>
               <div>
-                <p className="text-sm font-bold">실시간 분석 인사이트</p>
+                <p className="text-sm font-bold text-primary">실시간 분석 인사이트</p>
                 <p className="text-xs text-on-surface-variant">
                   현재 상위 마켓은 {nonZeroShops[0]?.shopName || '데이터 없음'}이고, 브랜드 필터에 따라 추이와 매출 비중이 함께 바뀝니다.
                 </p>
@@ -1018,7 +1043,7 @@ export default function SalesStatus({ isExpanded }) {
             </div>
           </div>
         </div>
-      </div>
+        </div>
 
       <div className="mb-8 grid grid-cols-12 items-stretch gap-6">
         <div className="col-span-12 flex h-full flex-col rounded-xl border border-outline-variant/10 bg-surface-container-lowest px-8 pb-5 pt-8 xl:col-span-8">

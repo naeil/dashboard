@@ -7,6 +7,7 @@ import naeil.dashboard.dto.IntegrationSettingDto;
 import naeil.dashboard.dto.RegisteredOpenMarketDto;
 import naeil.dashboard.enums.IntegrationType;
 import naeil.dashboard.service.IntegrationSettingService;
+import naeil.dashboard.service.MarketingCredentialService;
 import naeil.dashboard.service.PlayAutoCollectionService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,23 +21,30 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/settings/integrations")
 public class SettingsController {
 
-    // Multi-tenant auth is not implemented yet, so a default company is used for now.
     private static final Long DEFAULT_COMPANY_ID = 1L;
 
     private final IntegrationSettingService settingService;
+    private final MarketingCredentialService marketingCredentialService;
     private final PlayAutoCollectionService playAutoCollectionService;
 
     public SettingsController(
             IntegrationSettingService settingService,
+            MarketingCredentialService marketingCredentialService,
             PlayAutoCollectionService playAutoCollectionService
     ) {
         this.settingService = settingService;
+        this.marketingCredentialService = marketingCredentialService;
         this.playAutoCollectionService = playAutoCollectionService;
     }
 
     @GetMapping
     public ResponseEntity<List<IntegrationSettingDto.Response>> getSettings() {
         return ResponseEntity.ok(settingService.getSettingsByCompanyId(DEFAULT_COMPANY_ID));
+    }
+
+    @GetMapping("/marketing")
+    public ResponseEntity<List<IntegrationSettingDto.Response>> getMarketingCredentials() {
+        return ResponseEntity.ok(marketingCredentialService.getCredentialResponses(DEFAULT_COMPANY_ID));
     }
 
     @GetMapping("/shops")
@@ -46,7 +54,9 @@ public class SettingsController {
 
     @PostMapping("/validate")
     public ResponseEntity<?> validateApiKey(@RequestBody IntegrationSettingDto.ValidateRequest request) {
-        boolean isValid = settingService.validateApiKey(request);
+        boolean isValid = marketingCredentialService.supports(request.getIntegrationType())
+                ? marketingCredentialService.validateCredential(request)
+                : settingService.validateApiKey(request);
         if (isValid) {
             return ResponseEntity.ok(Map.of("message", "Validation successful"));
         }
@@ -57,12 +67,23 @@ public class SettingsController {
 
     @PostMapping
     public ResponseEntity<IntegrationSettingDto.Response> saveSetting(@RequestBody IntegrationSettingDto.SaveRequest request) {
+        if (marketingCredentialService.supports(request.getIntegrationType())) {
+            return ResponseEntity.ok(marketingCredentialService.saveCredential(DEFAULT_COMPANY_ID, request));
+        }
         return ResponseEntity.ok(settingService.saveSetting(DEFAULT_COMPANY_ID, request));
     }
 
     @PostMapping("/auth")
     public ResponseEntity<IntegrationSettingDto.Response> saveAuthSetting(@RequestBody IntegrationSettingDto.SaveAuthRequest request) {
+        if (marketingCredentialService.supports(request.getIntegrationType())) {
+            return ResponseEntity.ok(marketingCredentialService.saveCredential(DEFAULT_COMPANY_ID, request));
+        }
         return ResponseEntity.ok(settingService.saveAuthSetting(DEFAULT_COMPANY_ID, request));
+    }
+
+    @PostMapping("/marketing/auth")
+    public ResponseEntity<IntegrationSettingDto.Response> saveMarketingAuthSetting(@RequestBody IntegrationSettingDto.SaveAuthRequest request) {
+        return ResponseEntity.ok(marketingCredentialService.saveCredential(DEFAULT_COMPANY_ID, request));
     }
 
     @PostMapping("/collection")

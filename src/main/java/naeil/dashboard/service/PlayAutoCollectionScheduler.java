@@ -15,6 +15,7 @@ public class PlayAutoCollectionScheduler {
 
     private final IntegrationSettingService integrationSettingService;
     private final PlayAutoCollectionService playAutoCollectionService;
+    private final MarketingService marketingService;
 
     @Scheduled(fixedDelayString = "${app.playauto.scheduler.fixed-delay-ms:600000}")
     public void runScheduledCollection() {
@@ -35,6 +36,7 @@ public class PlayAutoCollectionScheduler {
 
                 if (orderDue) {
                     playAutoCollectionService.runOrderCollection(companyId, true);
+                    marketingService.refreshScheduledNaverCpcPerformance(companyId);
                 }
             } catch (Exception e) {
                 log.error("Scheduled PlayAuto collection failed for company {}", setting.getCompanyId(), e);

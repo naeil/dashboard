@@ -19,6 +19,8 @@ public interface DailySalesStatsRepository extends JpaRepository<DailySalesStats
 
     void deleteByCompanyId(Long companyId);
 
+    void deleteByCompanyIdAndDateBetween(Long companyId, LocalDate startDate, LocalDate endDate);
+
     Optional<DailySalesStats> findByCompanyIdAndDateAndShopIdAndBrandIdAndProductId(
             Long companyId,
             LocalDate date,
@@ -326,3 +328,4 @@ public interface DailySalesStatsRepository extends JpaRepository<DailySalesStats
             @Param("brandId") Long brandId
     );
 }
+

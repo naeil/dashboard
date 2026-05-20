@@ -3,35 +3,316 @@
 @tailwind utilities;
 
 @layer base {
-    body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+  :root {
+    color-scheme: light;
+    --color-on-primary-fixed: 17 28 45;
+    --color-surface-container: 236 238 240;
+    --color-secondary-fixed-dim: 195 198 209;
+    --color-on-primary-fixed-variant: 60 71 90;
+    --color-surface-bright: 247 249 251;
+    --color-error: 186 26 26;
+    --color-outline-variant: 197 198 205;
+    --color-secondary: 91 94 103;
+    --color-tertiary-fixed-dim: 221 195 157;
+    --color-surface-container-lowest: 255 255 255;
+    --color-on-tertiary-fixed: 39 25 2;
+    --color-on-secondary-fixed: 24 28 35;
+    --color-outline: 117 119 125;
+    --color-on-error-container: 147 0 10;
+    --color-on-error: 255 255 255;
+    --color-error-container: 255 218 214;
+    --color-on-surface-variant: 69 71 76;
+    --color-primary-container: 30 41 59;
+    --color-on-tertiary: 255 255 255;
+    --color-primary-fixed: 216 227 251;
+    --color-surface-dim: 216 218 220;
+    --color-on-background: 25 28 30;
+    --color-on-tertiary-container: 163 140 106;
+    --color-on-surface: 25 28 30;
+    --color-surface-tint: 84 95 115;
+    --color-primary-fixed-dim: 188 199 222;
+    --color-tertiary: 30 18 0;
+    --color-primary: 9 20 38;
+    --color-surface-container-high: 230 232 234;
+    --color-on-primary-container: 133 144 166;
+    --color-surface-container-highest: 224 227 229;
+    --color-on-primary: 255 255 255;
+    --color-secondary-fixed: 223 226 237;
+    --color-on-secondary-container: 97 100 109;
+    --color-on-tertiary-fixed-variant: 86 68 39;
+    --color-tertiary-fixed: 250 223 184;
+    --color-surface-variant: 224 227 229;
+    --color-surface: 247 249 251;
+    --color-surface-container-low: 242 244 246;
+    --color-inverse-primary: 188 199 222;
+    --color-background: 247 249 251;
+    --color-inverse-surface: 45 49 51;
+    --color-secondary-container: 223 226 237;
+    --color-on-secondary: 255 255 255;
+    --color-tertiary-container: 53 38 12;
+    --color-on-secondary-fixed-variant: 67 71 79;
+    --color-inverse-on-surface: 239 241 243;
+
+    --app-body-background:
+      radial-gradient(circle at top right, rgba(56, 189, 248, 0.1), transparent 24%),
+      linear-gradient(180deg, #f8fbff 0%, #eef4fb 55%, #e7eef7 100%);
+    --app-body-text: #0f172a;
+
+    --chart-grid: rgba(148, 163, 184, 0.16);
+    --chart-text: #475569;
+    --chart-tooltip-bg: #ffffff;
+    --chart-tooltip-border: #cbd5e1;
+    --chart-tooltip-title: #0f172a;
+    --chart-tooltip-body: #475569;
+    --chart-brand-primary: rgba(14, 116, 144, 0.82);
+    --chart-brand-primary-hover: #0891b2;
+    --chart-brand-secondary: rgba(14, 165, 233, 0.28);
+    --chart-brand-secondary-hover: rgba(14, 165, 233, 0.48);
+    --chart-line-border: #0f4c81;
+    --chart-line-fill: rgba(14, 116, 144, 0.12);
+    --chart-line-point: #67e8f9;
+  }
+
+  html.dark {
+    color-scheme: dark;
+    --color-on-primary-fixed: 241 245 249;
+    --color-surface-container: 30 41 59;
+    --color-secondary-fixed-dim: 100 116 139;
+    --color-on-primary-fixed-variant: 203 213 225;
+    --color-surface-bright: 15 23 42;
+    --color-error: 248 113 113;
+    --color-outline-variant: 71 85 105;
+    --color-secondary: 148 163 184;
+    --color-tertiary-fixed-dim: 250 204 21;
+    --color-surface-container-lowest: 15 23 42;
+    --color-on-tertiary-fixed: 254 243 199;
+    --color-on-secondary-fixed: 241 245 249;
+    --color-outline: 100 116 139;
+    --color-on-error-container: 254 226 226;
+    --color-on-error: 255 255 255;
+    --color-error-container: 127 29 29;
+    --color-on-surface-variant: 148 163 184;
+    --color-primary-container: 9 20 38;
+    --color-on-tertiary: 255 255 255;
+    --color-primary-fixed: 30 41 59;
+    --color-surface-dim: 15 23 42;
+    --color-on-background: 241 245 249;
+    --color-on-tertiary-container: 253 230 138;
+    --color-on-surface: 241 245 249;
+    --color-surface-tint: 125 211 252;
+    --color-primary-fixed-dim: 186 230 253;
+    --color-tertiary: 251 191 36;
+    --color-primary: 9 20 38;
+    --color-surface-container-high: 51 65 85;
+    --color-on-primary-container: 191 219 254;
+    --color-surface-container-highest: 71 85 105;
+    --color-on-primary: 255 255 255;
+    --color-secondary-fixed: 71 85 105;
+    --color-on-secondary-container: 226 232 240;
+    --color-on-tertiary-fixed-variant: 253 224 71;
+    --color-tertiary-fixed: 252 211 77;
+    --color-surface-variant: 51 65 85;
+    --color-surface: 2 6 23;
+    --color-surface-container-low: 30 41 59;
+    --color-inverse-primary: 15 23 42;
+    --color-background: 2 6 23;
+    --color-inverse-surface: 241 245 249;
+    --color-secondary-container: 30 41 59;
+    --color-on-secondary: 241 245 249;
+    --color-tertiary-container: 120 53 15;
+    --color-on-secondary-fixed-variant: 203 213 225;
+    --color-inverse-on-surface: 15 23 42;
+
+    --app-body-background:
+      radial-gradient(circle at top right, rgba(56, 189, 248, 0.18), transparent 24%),
+      radial-gradient(circle at top left, rgba(15, 23, 42, 0.76), transparent 30%),
+      linear-gradient(180deg, #020617 0%, #0f172a 100%);
+    --app-body-text: #e2e8f0;
+
+    --chart-grid: rgba(148, 163, 184, 0.18);
+    --chart-text: #cbd5e1;
+    --chart-tooltip-bg: #0f172a;
+    --chart-tooltip-border: #334155;
+    --chart-tooltip-title: #f8fafc;
+    --chart-tooltip-body: #cbd5e1;
+    --chart-brand-primary: rgba(56, 189, 248, 0.82);
+    --chart-brand-primary-hover: #7dd3fc;
+    --chart-brand-secondary: rgba(125, 211, 252, 0.35);
+    --chart-brand-secondary-hover: rgba(125, 211, 252, 0.52);
+    --chart-line-border: #7dd3fc;
+    --chart-line-fill: rgba(56, 189, 248, 0.18);
+    --chart-line-point: #bae6fd;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--app-body-background);
+    color: var(--app-body-text);
+    transition:
+      background 200ms ease,
+      color 200ms ease;
+  }
 }
 
 @layer utilities {
-    .material-symbols-outlined {
-        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    }
-    .material-symbols-outlined.filled {
-        font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    }
-    .tonal-gradient {
-        background: linear-gradient(135deg, #091426 0%, #1e293b 100%);
-    }
-    .glass-panel {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(20px);
-    }
-    
-    .inventory-scroll::-webkit-scrollbar {
-        width: 4px;
-    }
-    .inventory-scroll::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    .inventory-scroll::-webkit-scrollbar-thumb {
-        background: #e0e3e5;
-        border-radius: 10px;
-    }
-    .inventory-scroll::-webkit-scrollbar-thumb:hover {
-        background: #c5c6cd;
-    }
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+
+  .material-symbols-outlined.filled {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+
+  .tonal-gradient {
+    background: linear-gradient(135deg, #091426 0%, #1e293b 100%);
+  }
+
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+  }
+
+  .inventory-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .inventory-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .inventory-scroll::-webkit-scrollbar-thumb {
+    background: #e0e3e5;
+    border-radius: 10px;
+  }
+
+  .inventory-scroll::-webkit-scrollbar-thumb:hover {
+    background: #c5c6cd;
+  }
+}
+
+html.dark .bg-white {
+  background-color: rgb(15 23 42 / 1) !important;
+}
+
+html.dark .bg-white\/95 {
+  background-color: rgb(15 23 42 / 0.95) !important;
+}
+
+html.dark .bg-white\/80,
+html.dark .bg-white\/70 {
+  background-color: rgb(15 23 42 / 0.72) !important;
+}
+
+html.dark .bg-slate-50 {
+  background-color: rgb(15 23 42 / 0.72) !important;
+}
+
+html.dark .bg-slate-100 {
+  background-color: rgb(30 41 59 / 0.92) !important;
+}
+
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-300 {
+  border-color: rgb(51 65 85 / 0.9) !important;
+}
+
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: rgb(241 245 249 / 1) !important;
+}
+
+html.dark .text-slate-600,
+html.dark .text-slate-500,
+html.dark .text-slate-400 {
+  color: rgb(148 163 184 / 1) !important;
+}
+
+html.dark .bg-primary {
+  background-color: rgb(9 20 38 / 1) !important;
+}
+
+html.dark .text-primary {
+  color: rgb(125 211 252 / 1) !important;
+}
+
+html.dark .bg-primary-fixed {
+  background-color: rgb(30 41 59 / 0.95) !important;
+}
+
+html.dark .text-primary-fixed {
+  color: rgb(241 245 249 / 1) !important;
+}
+
+html.dark .text-primary-fixed-dim {
+  color: rgb(186 230 253 / 1) !important;
+}
+
+html.dark .border-primary,
+html.dark .focus\:border-primary:focus,
+html.dark .focus-within\:border-primary:focus-within {
+  border-color: rgb(56 189 248 / 0.9) !important;
+}
+
+html.dark .focus\:ring-primary:focus,
+html.dark .focus-within\:ring-primary:focus-within {
+  --tw-ring-color: rgb(56 189 248 / 0.35) !important;
+}
+
+html:not(.dark) .bg-slate-900,
+html:not(.dark) .bg-slate-900\/70,
+html:not(.dark) .bg-slate-900\/90,
+html:not(.dark) .bg-slate-950,
+html:not(.dark) .bg-slate-950\/40,
+html:not(.dark) .bg-slate-950\/50,
+html:not(.dark) .bg-slate-950\/60,
+html:not(.dark) .bg-slate-950\/70 {
+  background-color: rgb(255 255 255 / 0.84) !important;
+}
+
+html:not(.dark) .bg-white\/10 {
+  background-color: rgb(241 245 249 / 0.95) !important;
+}
+
+html:not(.dark) .border-white\/10 {
+  border-color: rgb(226 232 240 / 0.9) !important;
+}
+
+html:not(.dark) .text-white,
+html:not(.dark) .text-slate-300,
+html:not(.dark) .text-slate-200 {
+  color: rgb(15 23 42 / 1) !important;
+}
+
+html:not(.dark) .text-slate-400 {
+  color: rgb(100 116 139 / 1) !important;
+}
+
+html:not(.dark) .text-sky-100,
+html:not(.dark) .text-sky-200 {
+  color: rgb(3 105 161 / 1) !important;
+}
+
+html:not(.dark) .text-emerald-100,
+html:not(.dark) .text-emerald-200,
+html:not(.dark) .text-emerald-300 {
+  color: rgb(6 95 70 / 1) !important;
+}
+
+html:not(.dark) .text-amber-100,
+html:not(.dark) .text-amber-200 {
+  color: rgb(146 64 14 / 1) !important;
+}
+
+html:not(.dark) .text-rose-100,
+html:not(.dark) .text-rose-200,
+html:not(.dark) .text-rose-300 {
+  color: rgb(159 18 57 / 1) !important;
 }

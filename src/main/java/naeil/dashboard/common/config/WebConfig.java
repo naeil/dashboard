@@ -19,7 +19,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final AuthInterceptor authInterceptor;
 
-    @Value("${app.cors.allowed-origin-patterns:http://localhost:5173,http://localhost:3000}")
+    @Value("${app.cors.allowed-origin-patterns:http://localhost:*,http://127.0.0.1:*}")
     private String allowedOriginPatterns;
 
     public WebConfig(AuthInterceptor authInterceptor) {

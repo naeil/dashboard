@@ -31,6 +31,13 @@ public class AuthService {
         }
 
         String token = authorizationHeader.substring("Bearer ".length()).trim();
+        return authenticateToken(token);
+    }
+
+    public Optional<String> authenticateToken(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
         return authTokenService.validateAndExtractUsername(token);
     }
 

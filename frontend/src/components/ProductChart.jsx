@@ -14,11 +14,28 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const KW = (n) => '₩' + Math.round(Number(n ?? 0)).toLocaleString('ko-KR')
 
+function themeValue(name, fallback) {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+}
+
 export default function ProductChart({ data, loading }) {
   if (loading) return <div className="state-box"><div className="spinner" /></div>
   if (!data?.length) return <div className="state-box">데이터가 없습니다</div>
 
   const top8 = [...data].slice(0, 8)
+  const chartText = themeValue('--chart-text', '#475569')
+  const chartGrid = themeValue('--chart-grid', 'rgba(148, 163, 184, 0.16)')
+  const tooltipBg = themeValue('--chart-tooltip-bg', '#ffffff')
+  const tooltipBorder = themeValue('--chart-tooltip-border', '#cbd5e1')
+  const tooltipTitle = themeValue('--chart-tooltip-title', '#0f172a')
+  const tooltipBody = themeValue('--chart-tooltip-body', '#475569')
+  const lineBorder = themeValue('--chart-line-border', '#0f4c81')
+  const lineFill = themeValue('--chart-line-fill', 'rgba(14, 116, 144, 0.12)')
+  const pointColor = themeValue('--chart-line-point', '#67e8f9')
 
   const chartData = {
     labels: top8.map((d) => d.productName.length > 14 ? d.productName.slice(0, 14) + '…' : d.productName),
@@ -27,10 +44,10 @@ export default function ProductChart({ data, loading }) {
         label: '순 매출',
         data: top8.map((d) => Math.round(Number(d.totalNetRevenue))),
         fill: true,
-        borderColor: '#00385b',
-        backgroundColor: 'rgba(0, 56, 91, 0.08)',
-        pointBackgroundColor: '#45d8ed',
-        pointBorderColor: '#00385b',
+        borderColor: lineBorder,
+        backgroundColor: lineFill,
+        pointBackgroundColor: pointColor,
+        pointBorderColor: lineBorder,
         pointRadius: 5,
         pointHoverRadius: 7,
         tension: 0.4,
@@ -46,10 +63,10 @@ export default function ProductChart({ data, loading }) {
       legend: { display: false },
       tooltip: {
         callbacks: { label: (ctx) => ' ' + KW(ctx.parsed.y) },
-        backgroundColor: '#fff',
-        titleColor: '#181c1e',
-        bodyColor: '#434652',
-        borderColor: '#c3c6d4',
+        backgroundColor: tooltipBg,
+        titleColor: tooltipTitle,
+        bodyColor: tooltipBody,
+        borderColor: tooltipBorder,
         borderWidth: 1,
         padding: 12,
         cornerRadius: 8,
@@ -57,13 +74,14 @@ export default function ProductChart({ data, loading }) {
     },
     scales: {
       x: {
-        grid: { color: 'rgba(195,198,212,0.10)' },
-        ticks: { font: { family: 'Inter', size: 10 }, color: '#434652', maxRotation: 30 },
+        grid: { color: chartGrid },
+        ticks: { font: { family: 'Inter', size: 10 }, color: chartText, maxRotation: 30 },
       },
       y: {
-        grid: { color: 'rgba(195,198,212,0.10)' },
+        grid: { color: chartGrid },
         ticks: {
-          font: { family: 'Inter', size: 11 }, color: '#434652',
+          font: { family: 'Inter', size: 11 },
+          color: chartText,
           callback: (v) => '₩' + (v / 1_000_000).toFixed(0) + 'M',
         },
       },

@@ -3,14 +3,20 @@ package naeil.dashboard.controller;
 import java.time.YearMonth;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import naeil.dashboard.dto.InventoryAlertViewDTO;
 import naeil.dashboard.dto.ProductChannelCostUpdateRequest;
 import naeil.dashboard.dto.ProductChannelCostViewDTO;
 import naeil.dashboard.dto.ProductCostManagementResponseDTO;
 import naeil.dashboard.dto.ProductCostProfileUpdateRequest;
 import naeil.dashboard.dto.ProductCostViewDTO;
 import naeil.dashboard.dto.ProductInventoryViewDTO;
+import naeil.dashboard.dto.ProductSafeStockUpdateRequest;
+import naeil.dashboard.dto.ProductSafeStockUpdateResponseDTO;
+import naeil.dashboard.service.InventoryManagementService;
+import naeil.dashboard.service.InventoryAlertSseService;
 import naeil.dashboard.service.ProductService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -18,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/products")
@@ -25,6 +32,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
 
     private final ProductService productService;
+    private final InventoryManagementService inventoryManagementService;
+    private final InventoryAlertSseService inventoryAlertSseService;
 
     @GetMapping("/inventory")
     public ResponseEntity<List<ProductInventoryViewDTO>> getInventory(
@@ -39,12 +48,37 @@ public class ProductController {
         return ResponseEntity.ok(productService.getProductInventory(companyId, brandId, month));
     }
 
+    @GetMapping("/inventory/alerts")
+    public ResponseEntity<List<InventoryAlertViewDTO>> getActiveInventoryAlerts(
+            @RequestParam Long companyId,
+            @RequestParam(required = false) Long brandId
+    ) {
+        return ResponseEntity.ok(inventoryManagementService.getActiveInventoryAlerts(companyId, brandId));
+    }
+
+    @GetMapping(path = "/inventory/alerts/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamInventoryAlerts(
+            @RequestParam Long companyId,
+            @RequestParam(required = false) Long brandId
+    ) {
+        return inventoryAlertSseService.subscribe(companyId, brandId);
+    }
+
     @GetMapping("/costs")
     public ResponseEntity<ProductCostManagementResponseDTO> getProductCosts(
             @RequestParam Long companyId,
             @RequestParam(required = false) Long brandId
     ) {
         return ResponseEntity.ok(productService.getProductCosts(companyId, brandId));
+    }
+
+    @PutMapping("/{productId}/safe-stock")
+    public ResponseEntity<ProductSafeStockUpdateResponseDTO> updateSafeStock(
+            @PathVariable Long productId,
+            @RequestParam Long companyId,
+            @RequestBody ProductSafeStockUpdateRequest request
+    ) {
+        return ResponseEntity.ok(inventoryManagementService.updateSafeStock(companyId, productId, request));
     }
 
     @PutMapping("/{productId}/costs")

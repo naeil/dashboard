@@ -21,6 +21,20 @@ public interface OrdersRepository extends JpaRepository<Orders, String> {
         SELECT o
         FROM Orders o
         WHERE o.companyId = :companyId
+          AND COALESCE(o.ordTime, o.wdate) >= :startDateTime
+          AND COALESCE(o.ordTime, o.wdate) < :endDateTime
+        ORDER BY COALESCE(o.ordTime, o.wdate) ASC
+        """)
+    List<Orders> findAllByCompanyIdAndSalesBaseDateTimeBetween(
+            @Param("companyId") Long companyId,
+            @Param("startDateTime") LocalDateTime startDateTime,
+            @Param("endDateTime") LocalDateTime endDateTime
+    );
+
+    @Query("""
+        SELECT o
+        FROM Orders o
+        WHERE o.companyId = :companyId
           AND o.uniq <> :excludeUniq
           AND o.ordStatus IN :includedStatuses
           AND (:shopId IS NULL OR o.shopId = :shopId)
@@ -80,9 +94,9 @@ public interface OrdersRepository extends JpaRepository<Orders, String> {
     );
 
     @Query("""
-        SELECT COALESCE(SUM(CASE WHEN o.ordStatus = '취소완료' THEN 1 ELSE 0 END), 0) AS cancelStatusCount,
+        SELECT COALESCE(SUM(CASE WHEN o.ordStatus = '痍⑥냼?꾨즺' THEN 1 ELSE 0 END), 0) AS cancelStatusCount,
                COALESCE(SUM(CASE
-                   WHEN o.ordStatus = '반품완료' THEN 1
+                   WHEN o.ordStatus = '諛섑뭹?꾨즺' THEN 1
                    ELSE 0
                END), 0) AS returnStatusCount
         FROM Orders o
@@ -98,3 +112,5 @@ public interface OrdersRepository extends JpaRepository<Orders, String> {
             @Param("endDateTime") LocalDateTime endDateTime
     );
 }
+
+

@@ -5,8 +5,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import naeil.dashboard.common.exception.CustomException;
 import naeil.dashboard.common.time.TimeZoneSupport;
 import naeil.dashboard.enums.CollectionJobType;
 import naeil.dashboard.enums.IntegrationType;
@@ -22,24 +25,76 @@ public class PlayAutoCollectionService {
 
     private final IntegrationSettingService integrationSettingService;
     private final PlayAutoSyncService playAutoSyncService;
+    private final Set<Long> runningOrderCollections = ConcurrentHashMap.newKeySet();
 
     public void runOrderCollection(Long companyId, boolean automatic) {
-        IntegrationSettingService.CollectionWindow window =
-                integrationSettingService.getPlayAutoCollectionWindow(companyId);
-        String triggerLabel = automatic ? "자동" : "수동";
-        String historyMessage = String.format("주문 %s 수집 [%s ~ %s]", triggerLabel, window.startDate(), window.endDate());
-        runOrderCollection(companyId, window.startDate(), window.endDate(), triggerLabel, historyMessage);
+        if (!beginOrderCollection(companyId, automatic, automatic ? "scheduled order collection" : "manual order collection")) {
+            return;
+        }
+
+        try {
+            IntegrationSettingService.CollectionWindow window =
+                    integrationSettingService.getPlayAutoCollectionWindow(companyId);
+            String triggerLabel = automatic ? "AUTO" : "MANUAL";
+            String historyMessage = String.format("Order collection %s [%s ~ %s]", triggerLabel, window.startDate(), window.endDate());
+            runOrderCollection(
+                    companyId,
+                    window.startDate(),
+                    window.endDate(),
+                    triggerLabel,
+                    historyMessage,
+                    automatic ? RebuildScope.FULL : RebuildScope.COLLECTION_RANGE
+            );
+        } finally {
+            runningOrderCollections.remove(companyId);
+        }
     }
 
     public void refreshTodayOrders(Long companyId) {
-        LocalDate today = TimeZoneSupport.todayKst();
-        runOrderCollection(
-                companyId,
-                today,
-                today,
-                "즉시",
-                String.format("매출 현황 새로고침 [%s ~ %s]", today, today)
-        );
+        if (!beginOrderCollection(companyId, false, "today order refresh")) {
+            return;
+        }
+
+        try {
+            LocalDate today = TimeZoneSupport.todayKst();
+            runOrderCollection(
+                    companyId,
+                    today,
+                    today,
+                    "INSTANT",
+                    String.format("Sales dashboard refresh [%s ~ %s]", today, today),
+                    RebuildScope.TODAY_ONLY
+            );
+        } finally {
+            runningOrderCollections.remove(companyId);
+        }
+    }
+
+    private boolean beginOrderCollection(Long companyId, boolean skipWhenBusy, String actionLabel) {
+        if (!runningOrderCollections.add(companyId)) {
+            if (skipWhenBusy) {
+                log.info("Skipping {} for company {} because an order collection is already running in this instance", actionLabel, companyId);
+                return false;
+            }
+            throw new CustomException(409, "?대? 二쇰Ц ?섏쭛??吏꾪뻾 以묒엯?덈떎. ?꾩옱 ?섏쭛???앸궃 ???ㅼ떆 ?쒕룄??二쇱꽭??");
+        }
+
+        boolean keepLock = false;
+        try {
+            if (integrationSettingService.isOrderCollectionRunning(companyId)) {
+                if (skipWhenBusy) {
+                    log.info("Skipping {} for company {} because an order collection is already marked RUNNING", actionLabel, companyId);
+                    return false;
+                }
+                throw new CustomException(409, "?대? 二쇰Ц ?섏쭛??吏꾪뻾 以묒엯?덈떎. ?꾩옱 ?섏쭛???앸궃 ???ㅼ떆 ?쒕룄??二쇱꽭??");
+            }
+            keepLock = true;
+            return true;
+        } finally {
+            if (!keepLock) {
+                runningOrderCollections.remove(companyId);
+            }
+        }
     }
 
     public void syncShopMetadata(Long companyId) {
@@ -53,7 +108,8 @@ public class PlayAutoCollectionService {
             LocalDate startDate,
             LocalDate endDate,
             String triggerLabel,
-            String historyMessage
+            String historyMessage,
+            RebuildScope rebuildScope
     ) {
         LocalDateTime startedAt = TimeZoneSupport.nowUtc();
         Long historyId = integrationSettingService.recordCollectionExecutionStarted(
@@ -92,7 +148,14 @@ public class PlayAutoCollectionService {
             );
 
             playAutoSyncService.remapOrdersToResolvedProducts(companyId);
-            playAutoSyncService.rebuildDailySalesStats(companyId);
+            if (rebuildScope == RebuildScope.FULL) {
+                playAutoSyncService.rebuildDailySalesStats(companyId);
+            } else if (rebuildScope == RebuildScope.TODAY_ONLY) {
+                LocalDate today = TimeZoneSupport.todayKst();
+                playAutoSyncService.rebuildDailySalesStats(companyId, today, today);
+            } else {
+                playAutoSyncService.rebuildDailySalesStats(companyId, startDate, endDate);
+            }
 
             LocalDateTime finishedAt = TimeZoneSupport.nowUtc();
             integrationSettingService.markOrderCollectionCompleted(companyId, finishedAt);
@@ -113,8 +176,8 @@ public class PlayAutoCollectionService {
         LocalDate today = TimeZoneSupport.todayKst();
         LocalDate startDate = today.minusDays(1);
         LocalDate endDate = today;
-        String triggerLabel = automatic ? "자동" : "수동";
-        String historyMessage = String.format("재고/출고량 %s 수집 [%s ~ %s]", triggerLabel, startDate, endDate);
+        String triggerLabel = automatic ? "AUTO" : "MANUAL";
+        String historyMessage = String.format("Inventory collection %s [%s ~ %s]", triggerLabel, startDate, endDate);
         Long historyId = integrationSettingService.recordCollectionExecutionStarted(
                 companyId,
                 IntegrationType.PLAYAUTO,
@@ -223,11 +286,17 @@ public class PlayAutoCollectionService {
     private String buildFailureMessage(String baseMessage, Exception e) {
         String detail = e.getMessage();
         if (detail == null || detail.isBlank()) {
-            return baseMessage + " 실패";
+            return baseMessage + " failed";
         }
-        return baseMessage + " 실패: " + detail;
+        return baseMessage + " failed: " + detail;
     }
 
     private record CollectionChunk(LocalDate startDate, LocalDate endDate) {
+    }
+
+    private enum RebuildScope {
+        FULL,
+        COLLECTION_RANGE,
+        TODAY_ONLY,
     }
 }

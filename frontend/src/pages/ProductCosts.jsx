@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   getBrands,
   getProductCosts,
@@ -145,7 +145,7 @@ function createComponentDraft(component = {}, index = 0) {
 }
 
 function formatCurrency(value) {
-  return `₩${Math.round(Number(value ?? 0)).toLocaleString('ko-KR')}`
+  return `\${Math.round(Number(value ?? 0)).toLocaleString('ko-KR')}`
 }
 
 function resolveAllocationBaseCount(monthlyOutboundCount, realStock) {
@@ -646,7 +646,7 @@ export default function ProductCosts({ isExpanded }) {
   return (
     <main
       className={`min-h-screen bg-slate-50 p-8 transition-all duration-300 ${
-        isExpanded ? 'ml-64' : 'ml-20'
+        isExpanded ? 'ml-72' : 'ml-20'
       }`}
     >
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1055,6 +1055,7 @@ export default function ProductCosts({ isExpanded }) {
     </main>
   )
 }
+
 
 
 

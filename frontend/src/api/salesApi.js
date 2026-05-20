@@ -50,6 +50,19 @@ export const getProductInventory = (companyId, brandId, targetMonth) =>
     }
   })
 
+export const getInventoryAlerts = (companyId, brandId) =>
+  api.get('/products/inventory/alerts', {
+    params: {
+      companyId,
+      ...(brandId ? { brandId } : {})
+    }
+  })
+
+export const updateProductSafeStock = (productId, companyId, payload) =>
+  api.put(`/products/${productId}/safe-stock`, payload, {
+    params: { companyId }
+  })
+
 export const getProductCosts = (companyId, brandId) =>
   api.get('/products/costs', {
     params: {

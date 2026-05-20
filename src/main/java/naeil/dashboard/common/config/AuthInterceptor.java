@@ -32,7 +32,12 @@ public class AuthInterceptor implements HandlerInterceptor {
             return true;
         }
 
+        String tokenParam = "/api/products/inventory/alerts/stream".equals(path)
+                ? request.getParameter("token")
+                : null;
+
         return authService.authenticate(request.getHeader("Authorization"))
+                .or(() -> authService.authenticateToken(tokenParam))
                 .map(username -> {
                     request.setAttribute(AuthService.AUTHENTICATED_USERNAME_ATTR, username);
                     return true;
@@ -47,7 +52,6 @@ public class AuthInterceptor implements HandlerInterceptor {
                                 "message", "로그인이 필요합니다."
                         ));
                     } catch (Exception ignored) {
-                        // Response write failure can be ignored here.
                     }
                     return false;
                 });

@@ -19,7 +19,7 @@ public final class TimeZoneSupport {
     }
 
     public static LocalDate todayKst() {
-        return LocalDate.now(KST_ZONE);
+        return nowUtc().plusHours(9).toLocalDate();
     }
 
     public static LocalDateTime parseKstDateTimeToUtc(String value, DateTimeFormatter formatter) {

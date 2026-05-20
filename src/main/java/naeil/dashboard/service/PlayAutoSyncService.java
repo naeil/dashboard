@@ -371,7 +371,24 @@ public class PlayAutoSyncService {
 
     @Transactional
     public void rebuildDailySalesStats(Long companyId) {
-        dailySalesStatsRebuild(companyId, ordersRepository.findAllByCompanyId(companyId));
+        dailySalesStatsRebuild(companyId, null, null, ordersRepository.findAllByCompanyId(companyId));
+    }
+
+    @Transactional
+    public void rebuildDailySalesStats(Long companyId, LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null) {
+            rebuildDailySalesStats(companyId);
+            return;
+        }
+
+        LocalDateTime startDateTime = TimeZoneSupport.startOfKstDayToUtc(startDate);
+        LocalDateTime endDateTime = TimeZoneSupport.startOfNextKstDayToUtc(endDate);
+        dailySalesStatsRebuild(
+                companyId,
+                startDate,
+                endDate,
+                ordersRepository.findAllByCompanyIdAndSalesBaseDateTimeBetween(companyId, startDateTime, endDateTime)
+        );
     }
 
     private boolean processSingleOrder(
@@ -387,8 +404,8 @@ public class PlayAutoSyncService {
 
         Optional<Orders> existingOpt = ordersRepository.findByUniq(uniq);
 
-        // API???띯뫁???대??????????獄쏆뮇源?????덉쨮??uniq 揶쎛 獄쏆뮄???랁??봔筌?雅뚯눖揆甕곕뜇?뉐첎? ori_uniq ????용┛??野껋럩??
-        // 疫꿸퀣??雅뚯눖揆???곕뗄???뤿연 ??????띯뫁???? ?怨밴묶????낅쑓??꾨뱜??????덈즲嚥???몃빍??
+        // API?????쳛????????????????꾩룇裕뉑틦??????됱Ŧ??uniq ?띠럾? ?꾩룇裕????겶??遊붋嶺??낅슣?뽪룇?뺢퀡???먯쾸? ori_uniq ?????⒱뵛???롪퍔???
+        // ?リ옇????낅슣?뽪룇???怨뺣뾼???琉우뿰 ?????????쳛???? ??⑤객臾?????낆몥??袁⑤콦???????덉┣????紐껊퉵??
         if (existingOpt.isEmpty()) {
             OrderSaveOutcome outcome = saveNewOrder(companyId, node, productSnapshot, resolvedSkuCd, customerCache);
             if (!outcome.created()) {
@@ -398,8 +415,8 @@ public class PlayAutoSyncService {
 
             Orders order = outcome.order();
             if (OrderStatusGroups.isCompletedReversalStatus(status)) {
-                // DB????용뮉 ?醫됲뇣 雅뚯눖揆????? '?띯뫁??袁⑥┷' ?怨밴묶嚥???쇰선??野껋럩??(??녿┛?????띯뫁???
-                // 筌띲끉??+), 雅뚯눖揆?癒?땾(+)???믪눘? 疫꿸퀡以?????띯뫁??-), ?띯뫁??癒?땾(+)??疫꿸퀡以??곷튊 ???롥첎? 筌띿쉸???덈뼄.
+                // DB?????⑸츎 ??ル맪???낅슣?뽪룇?????? '???쳛??熬곣뫁?? ??⑤객臾뜹슖????곗꽑???롪퍔???(???욋뵛???????쳛???
+                // 嶺뚮씞???+), ?낅슣?뽪룇?????+)???誘る닔? ?リ옇?▽빳???????쳛??-), ???쳛??????+)???リ옇?▽빳??怨룻뒍 ????濡μ쾸? 嶺뚮씮?????덈펲.
                 BigDecimal cancelAmt = resolveReversalAmount(companyId, node, order);
                 order.markAsReversed(status, cancelAmt);
                 ordersRepository.save(order);
@@ -415,7 +432,7 @@ public class PlayAutoSyncService {
             Orders order = refreshExistingOrder(companyId, existingOrder, node, productSnapshot, resolvedSkuCd);
             if (OrderStatusGroups.isCompletedReversalStatus(status)) {
                 BigDecimal cancelAmt = resolveReversalAmount(companyId, node, order);
-                // ?띯뫁?????문 ?紐껊굡??野껋럩??pay_amt揶쎛 0??곗쨮 ?????삳뮉 野껋럩??첎? 筌띾‘?앲첋?嚥? ??野껋럩??疫꿸퀣????雅뚯눖揆??野껉퀣?ｆ묾?됰만???????몃빍??
+                // ???쳛?????臾??筌뤾퍓援???롪퍔???pay_amt?띠럾? 0??怨쀬Ŧ ???????노츎 ?롪퍔???泥? 嶺뚮씭???뀁쾵??? ???롪퍔????リ옇??????낅슣?뽪룇???롪퍒??節녿Ь??곕쭔???????紐껊퉵??
                 order.markAsReversed(status, cancelAmt);
             } else {
                 order.clearCancelAmt();
@@ -805,7 +822,7 @@ public class PlayAutoSyncService {
         String productName = firstNonBlank(
                 textOrNull(productSnapshot != null ? productSnapshot.path("prod_name") : null),
                 textOrNull(orderNode.path("shop_sale_name")),
-                "沃섎챶?뉒몴??怨밸?"
+                "亦껋꼶梨??믩ご???⑤갭?"
         );
 
         return productRepository.save(Product.builder()
@@ -1140,8 +1157,12 @@ public class PlayAutoSyncService {
         statsRepository.save(stats);
     }
 
-    private void dailySalesStatsRebuild(Long companyId, List<Orders> orders) {
-        statsRepository.deleteByCompanyId(companyId);
+    private void dailySalesStatsRebuild(Long companyId, LocalDate startDate, LocalDate endDate, List<Orders> orders) {
+        if (startDate != null && endDate != null) {
+            statsRepository.deleteByCompanyIdAndDateBetween(companyId, startDate, endDate);
+        } else {
+            statsRepository.deleteByCompanyId(companyId);
+        }
         statsRepository.flush();
 
         Map<String, DailySalesStats> statsMap = new HashMap<>();
@@ -1152,6 +1173,9 @@ public class PlayAutoSyncService {
             }
 
             LocalDate targetDate = salesBaseDateTime.toLocalDate();
+            if (startDate != null && endDate != null && (targetDate.isBefore(startDate) || targetDate.isAfter(endDate))) {
+                continue;
+            }
             String key = companyId + "|" + targetDate + "|" + order.getShopId() + "|" + order.getBrandId() + "|" + order.getProductId();
             DailySalesStats stats = statsMap.computeIfAbsent(key, unused -> DailySalesStats.builder()
                     .companyId(companyId)
@@ -1522,6 +1546,8 @@ public class PlayAutoSyncService {
         }
     }
 }
+
+
 
 
 
