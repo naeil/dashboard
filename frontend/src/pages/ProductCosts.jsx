@@ -846,7 +846,7 @@ export default function ProductCosts({ isExpanded }) {
                     </div>
 
                     {isCostDetailExpanded && (
-                      <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                      <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
                         {costComponents.length === 0 && (
                           <p className="text-sm text-slate-500">등록된 원가 상세 항목이 없습니다. 항목 추가 버튼으로 세부 원가표를 만들어보세요.</p>
                         )}
@@ -967,9 +967,6 @@ export default function ProductCosts({ isExpanded }) {
                                 <div className="mb-2 flex items-center justify-between gap-2">
                                   <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                                     개당단가
-                                  </span>
-                                  <span className="text-[11px] font-bold text-emerald-600">
-                                    자동 계산값 {formatCurrency(getComputedUnitCost(component))}
                                   </span>
                                 </div>
                                 <input

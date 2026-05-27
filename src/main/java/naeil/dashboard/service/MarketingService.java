@@ -103,6 +103,11 @@ public class MarketingService {
 
     @Transactional
     public Map<String, Object> getNaverCpcPerformance(LocalDate from, LocalDate to) {
+        return getNaverCpcPerformance(from, to, "ALL");
+    }
+
+    @Transactional
+    public Map<String, Object> getNaverCpcPerformance(LocalDate from, LocalDate to, String adType) {
         validateRange(from, to);
         List<Map<String, Object>> rows = loadNaverCpcRows(from, to);
         return performanceResponse("NAVER_CPC", from, to, rows, summarizeNaverRows(rows));
@@ -130,12 +135,13 @@ public class MarketingService {
     }
 
     public Map<String, Object> getMetaAdsPerformance(LocalDate from, LocalDate to) {
-        validateRange(from, to);
-        MetaAdsApiClient.Credentials credentials = getMetaAdsCredentials();
+        return getMetaAdsPerformance(from.toString(), to.toString(), "campaign");
+    }
 
-        if (credentials.adAccountId().isBlank() || credentials.accessToken().isBlank()) {
-            throw new CustomException(400, "Meta Ads credentials are not configured");
-        }
+    public Map<String, Object> getMetaAdsPerformance(String fromStr, String toStr, String level) {
+        LocalDate from = LocalDate.parse(fromStr);
+        LocalDate to = LocalDate.parse(toStr);
+        validateRange(from, to);
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT date,
@@ -156,6 +162,45 @@ public class MarketingService {
                 """, from, to);
 
         return performanceResponse("META_ADS", from, to, addMetaCpa(rows), summarizeMetaRows(rows));
+    }
+
+    public Map<String, Object> getMetaAdCreatives(String fromStr, String toStr) {
+        LocalDate from = LocalDate.parse(fromStr);
+        LocalDate to = LocalDate.parse(toStr);
+        validateRange(from, to);
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT date,
+                       ad_name AS "adName",
+                       campaign_name AS "campaignName",
+                       impressions,
+                       clicks,
+                       ctr,
+                       cost
+                  FROM meta_ads_daily_stats
+                 WHERE date BETWEEN ? AND ?
+                 ORDER BY date DESC, cost DESC
+                """, from, to);
+
+        return performanceResponse("META_ADS_CREATIVES", from, to, rows, summarizeMetaRows(rows));
+    }
+
+    public Map<String, Object> getLinkedSearchKeywords(String adType, int limit) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT keyword,
+                       SUM(impressions) AS impressions,
+                       SUM(clicks) AS clicks,
+                       SUM(cost) AS cost
+                  FROM naver_cpc_daily_stats
+                 GROUP BY keyword
+                 ORDER BY SUM(cost) DESC
+                 LIMIT ?
+                """, limit);
+        return Map.of(
+                "adType", adType,
+                "limit", limit,
+                "keywords", rows
+        );
     }
 
     @Transactional

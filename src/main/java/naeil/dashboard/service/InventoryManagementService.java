@@ -39,6 +39,9 @@ public class InventoryManagementService {
                   JOIN brand b ON b.id = p.brand_id
                  WHERE ia.company_id = ?
                    AND ia.is_active = TRUE
+                   AND p.real_stock >= 0
+                   AND p.product_name NOT LIKE '[\uC0D8\uD50C]%'
+                   AND b.brand_name <> '미분류'
                 """;
 
         String orderBy = """

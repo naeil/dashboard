@@ -1,10 +1,18 @@
 package naeil.dashboard.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import naeil.dashboard.common.exception.CustomException;
+import naeil.dashboard.dto.AuthUser;
+import naeil.dashboard.dto.UserRole;
+import naeil.dashboard.service.AuthService;
 import naeil.dashboard.service.ExecutiveDashboardService;
+import naeil.dashboard.service.IssueBriefingService;
+import naeil.dashboard.service.PlayAutoCollectionService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +31,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class ExecutiveDashboardController {
 
     private final ExecutiveDashboardService executiveDashboardService;
+    private final PlayAutoCollectionService playAutoCollectionService;
+    private final IssueBriefingService issueBriefingService;
 
     @GetMapping("/summary")
     public ResponseEntity<Map<String, Object>> getSummary(@RequestParam(defaultValue = "1") Long companyId) {
@@ -53,9 +63,60 @@ public class ExecutiveDashboardController {
         return ResponseEntity.ok(executiveDashboardService.getProductProfits(companyId));
     }
 
+    @GetMapping("/product-movements")
+    public ResponseEntity<Map<String, Object>> getProductMovements(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getProductMovements(companyId));
+    }
+
+    @PostMapping("/product-movements/sync-playauto")
+    public ResponseEntity<Map<String, Object>> syncPlayAutoProductMovements(@RequestParam(defaultValue = "1") Long companyId) {
+        playAutoCollectionService.runInventoryCollection(companyId, false);
+        Map<String, Object> result = new LinkedHashMap<>(executiveDashboardService.getProductMovements(companyId));
+        result.put("message", "PlayAuto inventory and outbound data synced.");
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/product-forecasts")
     public ResponseEntity<List<Map<String, Object>>> getProductForecasts(@RequestParam(defaultValue = "1") Long companyId) {
         return ResponseEntity.ok(executiveDashboardService.getProductForecasts(companyId));
+    }
+
+    @GetMapping("/work-tasks")
+    public ResponseEntity<List<Map<String, Object>>> getWorkTasks(
+            @RequestParam(defaultValue = "1") Long companyId,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.getWorkTasks(companyId, requireUser(request)));
+    }
+
+    @GetMapping("/channel-credentials")
+    public ResponseEntity<List<Map<String, Object>>> getChannelCredentials(
+            @RequestParam(defaultValue = "1") Long companyId,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.getChannelCredentials(companyId, requireUser(request)));
+    }
+
+    @PostMapping("/channel-credentials")
+    public ResponseEntity<Map<String, Object>> saveChannelCredential(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.saveChannelCredential(companyId, payload, requireUser(request)));
+    }
+
+    @GetMapping("/payment-requests")
+    public ResponseEntity<List<Map<String, Object>>> getPaymentRequests(
+            @RequestParam(defaultValue = "1") Long companyId,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.getPaymentRequests(companyId, requireUser(request)));
+    }
+
+    @PostMapping("/payment-requests/{id}/approve")
+    public ResponseEntity<Map<String, Object>> approvePaymentRequest(@PathVariable Long id) {
+        return ResponseEntity.ok(executiveDashboardService.approvePaymentRequest(id));
     }
 
     @GetMapping("/channel-sales")
@@ -117,34 +178,87 @@ public class ExecutiveDashboardController {
         return ResponseEntity.ok(executiveDashboardService.getAdPerformance(companyId));
     }
 
+    @GetMapping("/ad-roas-goals")
+    public ResponseEntity<List<Map<String, Object>>> getAdRoasGoals(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getAdRoasGoals(companyId));
+    }
+
     @GetMapping("/issues")
     public ResponseEntity<List<Map<String, Object>>> getIssueLogs(@RequestParam(defaultValue = "1") Long companyId) {
         return ResponseEntity.ok(executiveDashboardService.getIssueLogs(companyId));
     }
 
+    @GetMapping("/customer-inquiries")
+    public ResponseEntity<Map<String, Object>> getCustomerInquiries(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getCustomerInquiries(companyId));
+    }
+
+    @GetMapping("/customer-db")
+    public ResponseEntity<Map<String, Object>> getCustomerDatabase(
+            @RequestParam(defaultValue = "1") Long companyId,
+            HttpServletRequest request
+    ) {
+        requireManagerOrExecutive(requireUser(request));
+        return ResponseEntity.ok(executiveDashboardService.getCustomerDatabase(companyId));
+    }
+
+    @PostMapping("/customer-db/sync-playauto")
+    public ResponseEntity<Map<String, Object>> syncPlayAutoCustomerDatabase(
+            @RequestParam(defaultValue = "1") Long companyId,
+            HttpServletRequest request
+    ) {
+        requireManagerOrExecutive(requireUser(request));
+        playAutoCollectionService.runOrderCollection(companyId, false);
+        Map<String, Object> result = new LinkedHashMap<>(executiveDashboardService.getCustomerDatabase(companyId));
+        result.put("message", "PlayAuto 고객 주문 데이터 수집이 완료되었습니다.");
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/issue-briefing")
+    public ResponseEntity<Map<String, Object>> getIssueBriefing() {
+        return ResponseEntity.ok(issueBriefingService.getIssueBriefing());
+    }
+
     @PostMapping("/{resource}")
     public ResponseEntity<Map<String, Object>> createRecord(
             @PathVariable String resource,
-            @RequestBody Map<String, Object> payload
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request
     ) {
-        return ResponseEntity.ok(executiveDashboardService.createRecord(resource, payload));
+        return ResponseEntity.ok(executiveDashboardService.createRecord(resource, payload, requireUser(request)));
     }
 
     @PutMapping("/{resource}/{id}")
     public ResponseEntity<Map<String, Object>> updateRecord(
             @PathVariable String resource,
             @PathVariable Long id,
-            @RequestBody Map<String, Object> payload
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request
     ) {
-        return ResponseEntity.ok(executiveDashboardService.updateRecord(resource, id, payload));
+        return ResponseEntity.ok(executiveDashboardService.updateRecord(resource, id, payload, requireUser(request)));
     }
 
     @DeleteMapping("/{resource}/{id}")
     public ResponseEntity<Map<String, String>> deleteRecord(
             @PathVariable String resource,
-            @PathVariable Long id
+            @PathVariable Long id,
+            HttpServletRequest request
     ) {
-        executiveDashboardService.deleteRecord(resource, id);
-        return ResponseEntity.ok(Map.of("message", "Deleted successfully"));
+        executiveDashboardService.deleteRecord(resource, id, requireUser(request));
+        return ResponseEntity.ok(Map.of("message", "삭제되었습니다."));
+    }
+
+    private AuthUser requireUser(HttpServletRequest request) {
+        return (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
+    }
+
+    private void requireManagerOrExecutive(AuthUser user) {
+        if (user == null) {
+            throw new CustomException(401, "로그인이 필요합니다.");
+        }
+        UserRole role = UserRole.from(user.role());
+        if (role != UserRole.EXECUTIVE && role != UserRole.MANAGER) {
+            throw new CustomException(403, "관리자 권한이 필요한 고객 DB입니다.");
+        }
     }
 }

@@ -214,8 +214,7 @@ function ChecklistBand({ country, moq, pipelineRows }) {
   )
 }
 
-function ExportAiCommentary({ context, messages, question, onQuestionChange, onAsk, theme = 'dark' }) {
-  const isLight = theme !== 'dark'
+function ExportAiCommentary({ context, messages, question, onQuestionChange, onAsk }) {
   const country = context.selectedCountry === ALL ? '전체 국가' : displayText(context.selectedCountry)
   const moq = context.selectedMoq === ALL ? '전체 MOQ' : formatMoq(context.selectedMoq)
   const insight = COUNTRY_INSIGHTS[country] || {
@@ -226,48 +225,34 @@ function ExportAiCommentary({ context, messages, question, onQuestionChange, onA
   const best = context.bestRow
 
   return (
-    <section className={`mb-6 rounded-lg border p-5 shadow-xl transition-colors ${
-      isLight
-        ? 'border-slate-200 bg-white shadow-slate-200/60'
-        : 'border-sky-400/20 bg-slate-900/80 shadow-slate-950/20'
-    }`}>
+    <section className="mb-6 rounded-lg border border-sky-400/20 bg-slate-900/80 p-5 shadow-xl shadow-slate-950/20">
       <p className="text-sm font-black text-sky-100">AI 수출 코멘트</p>
-      <p className={`mt-2 text-xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>
+      <p className="mt-2 text-xl font-black text-white">
         {country} / {moq} 기준 {best ? displayText(best.product_name) : '후보 없음'} 우선 검토
       </p>
-      <p className={`mt-2 text-sm font-bold ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
+      <p className="mt-2 text-sm font-bold text-slate-300">
         선택 조건 예상 매출 {won(context.summary.expectedSales)}, 회사 이윤 {won(context.summary.companyProfit)}, 평균 이익률 {pct(context.avgProfitRate)}
       </p>
       <div className="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <div className={`rounded-lg p-4 ${isLight ? 'border border-slate-200 bg-slate-50' : 'bg-slate-950/60'}`}>
+        <div className="rounded-lg bg-slate-950/60 p-4">
           <p className="text-xs font-black text-slate-500">국가별 특징</p>
-          <p className={`mt-2 text-sm font-bold ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{insight.traits}</p>
+          <p className="mt-2 text-sm font-bold text-slate-200">{insight.traits}</p>
         </div>
-        <div className={`rounded-lg p-4 ${isLight ? 'border border-emerald-200 bg-emerald-50' : 'bg-slate-950/60'}`}>
+        <div className="rounded-lg bg-slate-950/60 p-4">
           <p className="text-xs font-black text-slate-500">도움이 되는 점</p>
-          <p className={`mt-2 text-sm font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-100'}`}>{insight.help}</p>
+          <p className="mt-2 text-sm font-bold text-emerald-100">{insight.help}</p>
         </div>
-        <div className={`rounded-lg p-4 ${isLight ? 'border border-amber-200 bg-amber-50' : 'bg-slate-950/60'}`}>
+        <div className="rounded-lg bg-slate-950/60 p-4">
           <p className="text-xs font-black text-slate-500">리스크</p>
-          <p className={`mt-2 text-sm font-bold ${isLight ? 'text-amber-700' : 'text-amber-100'}`}>{insight.risks}</p>
+          <p className="mt-2 text-sm font-bold text-amber-100">{insight.risks}</p>
         </div>
       </div>
-      <div className={`mt-4 rounded-lg border p-4 text-sm font-bold ${
-        isLight
-          ? 'border-amber-200 bg-amber-50 text-amber-800'
-          : 'border-amber-400/20 bg-amber-400/10 text-amber-50'
-      }`}>
+      <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-400/10 p-4 text-sm font-bold text-amber-50">
         FOB 조건에서는 선적 이후 운임, 보험, 현지 통관비가 바이어 비용으로 넘어가지만, 바이어가 이를 최종 판매가에 반영하지 못하면 기존 공급가 인하 압박으로 돌아올 수 있습니다.
       </div>
       <div className="mt-4 space-y-3">
         {messages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className={`max-w-4xl rounded-lg px-4 py-3 text-sm font-bold ${
-            message.role === 'user'
-              ? 'ml-auto bg-sky-400 text-slate-950'
-              : isLight
-                ? 'border border-slate-200 bg-slate-50 text-slate-800'
-                : 'bg-slate-950/70 text-slate-200'
-          }`}>
+          <div key={`${message.role}-${index}`} className={`max-w-4xl rounded-lg px-4 py-3 text-sm font-bold ${message.role === 'user' ? 'ml-auto bg-sky-400 text-slate-950' : 'bg-slate-950/70 text-slate-200'}`}>
             {message.text}
           </div>
         ))}
@@ -277,11 +262,7 @@ function ExportAiCommentary({ context, messages, question, onQuestionChange, onA
           value={question}
           onChange={(event) => onQuestionChange(event.target.value)}
           placeholder="예: FOB 조건에서 가장 위험한 부분은 뭐야?"
-          className={`h-11 flex-1 rounded-lg border px-4 text-sm font-bold outline-none focus:border-sky-400 ${
-            isLight
-              ? 'border-slate-200 bg-white text-slate-900 placeholder:text-slate-400'
-              : 'border-white/10 bg-slate-950 text-white'
-          }`}
+          className="h-11 flex-1 rounded-lg border border-white/10 bg-slate-950 px-4 text-sm font-bold text-white outline-none focus:border-sky-400"
         />
         <button type="submit" className="h-11 rounded-lg bg-sky-400 px-5 text-sm font-black text-slate-950 transition-colors hover:bg-sky-300">
           AI에게 물어보기
@@ -291,8 +272,7 @@ function ExportAiCommentary({ context, messages, question, onQuestionChange, onA
   )
 }
 
-export default function ExportPipelinePage({ theme = 'dark' }) {
-  const isLight = theme !== 'dark'
+export default function ExportPipelinePage() {
   const [pipelineRows, setPipelineRows] = useState([])
   const [priceRows, setPriceRows] = useState([])
   const [showPriceForm, setShowPriceForm] = useState(false)
@@ -486,30 +466,22 @@ export default function ExportPipelinePage({ theme = 'dark' }) {
         />
       )}
 
-      <section className={`mb-6 rounded-lg border p-5 shadow-xl ${
-        isLight
-          ? 'border-slate-200 bg-white shadow-slate-200/60'
-          : 'border-white/10 bg-slate-900/70 shadow-slate-950/20'
-      }`}>
+      <section className="mb-6 rounded-lg border border-white/10 bg-slate-900/70 p-5 shadow-xl shadow-slate-950/20">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className={`text-sm font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>공급가 조회 기준</p>
-            <p className={`mt-1 text-xs font-bold ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{selectedFilterLabel}</p>
+            <p className="text-sm font-black text-white">공급가 조회 기준</p>
+            <p className="mt-1 text-xs font-bold text-slate-400">{selectedFilterLabel}</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <label>
-              <span className={`mb-1 block text-xs font-bold ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>국가</span>
+              <span className="mb-1 block text-xs font-bold text-slate-400">국가</span>
               <select
                 value={selectedCountry}
                 onChange={(event) => {
                   setSelectedCountry(event.target.value)
                   setSelectedMoq(ALL)
                 }}
-                className={`h-10 min-w-36 rounded-lg border px-3 text-sm font-bold outline-none focus:border-sky-400 ${
-                  isLight
-                    ? 'border-slate-200 bg-white text-slate-900'
-                    : 'border-white/10 bg-slate-950 text-white'
-                }`}
+                className="h-10 min-w-36 rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
               >
                 <option value={ALL}>전체</option>
                 {countryOptions.map((country) => (
@@ -518,15 +490,11 @@ export default function ExportPipelinePage({ theme = 'dark' }) {
               </select>
             </label>
             <label>
-              <span className={`mb-1 block text-xs font-bold ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>MOQ</span>
+              <span className="mb-1 block text-xs font-bold text-slate-400">MOQ</span>
               <select
                 value={selectedMoq}
                 onChange={(event) => setSelectedMoq(event.target.value)}
-                className={`h-10 min-w-36 rounded-lg border px-3 text-sm font-bold outline-none focus:border-sky-400 ${
-                  isLight
-                    ? 'border-slate-200 bg-white text-slate-900'
-                    : 'border-white/10 bg-slate-950 text-white'
-                }`}
+                className="h-10 min-w-36 rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
               >
                 <option value={ALL}>전체</option>
                 {moqOptions.map((moq) => (
@@ -539,52 +507,36 @@ export default function ExportPipelinePage({ theme = 'dark' }) {
       </section>
 
       <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="공급가 기준 예상 매출" value={won(summary.expectedSales)} tone="sky" icon="language" theme={theme} />
-        <KpiCard label="총 생산 원가" value={won(summary.productionCost)} tone="amber" icon="factory" theme={theme} />
-        <KpiCard label="회사 이윤" value={won(summary.companyProfit)} tone="emerald" icon="trending_up" theme={theme} />
-        <KpiCard label="체크리스트 확정 예상 매출" value={won(confirmedPriceSales)} tone="emerald" icon="task_alt" theme={theme} />
+        <KpiCard label="공급가 기준 예상 매출" value={won(summary.expectedSales)} tone="sky" icon="language" />
+        <KpiCard label="총 생산 원가" value={won(summary.productionCost)} tone="amber" icon="factory" />
+        <KpiCard label="회사 이윤" value={won(summary.companyProfit)} tone="emerald" icon="trending_up" />
+        <KpiCard label="체크리스트 확정 예상 매출" value={won(confirmedPriceSales)} tone="emerald" icon="task_alt" />
       </section>
 
       <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className={`rounded-lg border p-5 ${
-          isLight
-            ? 'border-slate-200 bg-white shadow-sm shadow-slate-200/60'
-            : 'border-white/10 bg-slate-900/70'
-        }`}>
-          <p className={`text-xs font-black ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>파이프라인 전체 후보 매출</p>
-          <p className={`mt-3 text-2xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{won(pipelinePotentialSales)}</p>
+        <div className="rounded-lg border border-white/10 bg-slate-900/70 p-5">
+          <p className="text-xs font-black text-slate-400">파이프라인 전체 후보 매출</p>
+          <p className="mt-3 text-2xl font-black text-white">{won(pipelinePotentialSales)}</p>
         </div>
-        <div className={`rounded-lg border p-5 ${
-          isLight
-            ? 'border-emerald-200 bg-emerald-50'
-            : 'border-emerald-400/20 bg-emerald-400/10'
-        }`}>
-          <p className={`text-xs font-black ${isLight ? 'text-emerald-700' : 'text-emerald-100'}`}>확정 반영 매출</p>
-          <p className={`mt-3 text-2xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{won(confirmedPriceSales)}</p>
+        <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-5">
+          <p className="text-xs font-black text-emerald-100">확정 반영 매출</p>
+          <p className="mt-3 text-2xl font-black text-white">{won(confirmedPriceSales)}</p>
         </div>
-        <div className={`rounded-lg border p-5 ${
-          isLight
-            ? 'border-sky-200 bg-sky-50'
-            : 'border-sky-400/20 bg-sky-400/10'
-        }`}>
-          <p className={`text-xs font-black ${isLight ? 'text-sky-700' : 'text-sky-100'}`}>매출 반영 기준</p>
-          <p className={`mt-3 text-sm font-black ${isLight ? 'text-slate-700' : 'text-white'}`}>발주 완료 체크부터 대표 지표에 반영됩니다.</p>
+        <div className="rounded-lg border border-sky-400/20 bg-sky-400/10 p-5">
+          <p className="text-xs font-black text-sky-100">매출 반영 기준</p>
+          <p className="mt-3 text-sm font-black text-white">발주 완료 체크부터 대표 지표에 반영됩니다.</p>
         </div>
       </section>
 
       <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className={`rounded-lg border p-5 xl:col-span-2 ${
-          isLight
-            ? 'border-slate-200 bg-white shadow-sm shadow-slate-200/60'
-            : 'border-white/10 bg-slate-900/70'
-        }`}>
-          <p className={`text-sm font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>이윤 기준 최우선 검토</p>
+        <div className="rounded-lg border border-white/10 bg-slate-900/70 p-5 xl:col-span-2">
+          <p className="text-sm font-black text-white">이윤 기준 최우선 검토</p>
           {bestRow ? (
             <>
-              <p className={`mt-2 text-xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>
+              <p className="mt-2 text-xl font-black text-white">
                 {displayText(bestRow.country)} · {displayText(bestRow.product_name)} · {displayText(bestRow.scenario_label)}
               </p>
-              <p className={`mt-1 text-sm font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-100'}`}>
+              <p className="mt-1 text-sm font-bold text-emerald-100">
                 예상 매출 {won(bestRow.expected_sales)} / 회사 이윤 {won(bestRow.operating_profit_total)} / 이익률 {pct(bestRow.operating_profit_rate)}
               </p>
             </>
@@ -592,14 +544,10 @@ export default function ExportPipelinePage({ theme = 'dark' }) {
             <p className="mt-2 text-sm font-bold text-slate-500">선택 조건에 해당하는 공급가 데이터가 없습니다.</p>
           )}
         </div>
-        <div className={`rounded-lg border p-5 ${
-          isLight
-            ? 'border-emerald-200 bg-emerald-50'
-            : 'border-emerald-400/20 bg-emerald-400/10'
-        }`}>
-          <p className={`text-sm font-black ${isLight ? 'text-emerald-700' : 'text-emerald-100'}`}>평균 이익률</p>
-          <p className={`mt-3 text-3xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{pct(summary.avgProfitRate)}</p>
-          <p className={`mt-2 text-xs font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-100'}`}>선택 공급가 {filteredPriceRows.length}건 기준</p>
+        <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-5">
+          <p className="text-sm font-black text-emerald-100">평균 이익률</p>
+          <p className="mt-3 text-3xl font-black text-white">{pct(summary.avgProfitRate)}</p>
+          <p className="mt-2 text-xs font-bold text-emerald-100">선택 공급가 {filteredPriceRows.length}건 기준</p>
         </div>
       </section>
 
@@ -609,35 +557,23 @@ export default function ExportPipelinePage({ theme = 'dark' }) {
         question={aiQuestion}
         onQuestionChange={setAiQuestion}
         onAsk={askAi}
-        theme={theme}
       />
 
-      <Panel title="국가별 수출 공급가 및 회사 이윤" right={<span className={`text-xs font-black ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{selectedFilterLabel}</span>} theme={theme}>
+      <Panel title="국가별 수출 공급가 및 회사 이윤" right={<span className="text-xs font-black text-slate-400">{selectedFilterLabel}</span>}>
         <div className="space-y-6">
           {priceGroups.map((group) => {
             return (
-              <section
-                key={group.key}
-                className={`rounded-lg border p-4 ${
-                  isLight
-                    ? 'border-slate-200 bg-slate-50'
-                    : 'border-white/10 bg-slate-950/30'
-                }`}
-              >
+              <section key={group.key} className="rounded-lg border border-white/10 bg-slate-950/30 p-4">
                 <div className="mb-4 flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
                   <div>
-                    <p className={`text-lg font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{group.country} / {formatMoq(group.moq)}</p>
-                    <p className={`mt-1 text-xs font-bold ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>이 조건의 체크리스트와 공급가를 함께 봅니다.</p>
+                    <p className="text-lg font-black text-white">{group.country} / {formatMoq(group.moq)}</p>
+                    <p className="mt-1 text-xs font-bold text-slate-400">이 조건의 체크리스트와 공급가를 함께 봅니다.</p>
                   </div>
-                  <span className={`w-fit rounded-full border px-3 py-1 text-xs font-black ${
-                    isLight
-                      ? 'border-sky-200 bg-sky-50 text-sky-700'
-                      : 'border-sky-400/30 bg-sky-400/10 text-sky-100'
-                  }`}>
+                  <span className="w-fit rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-black text-sky-100">
                     공급가 {group.rows.length}건
                   </span>
                 </div>
-                <DataTable rows={group.rows} rowKey={(row) => row.id} columns={priceColumns} theme={theme} />
+                <DataTable rows={group.rows} rowKey={(row) => row.id} columns={priceColumns} />
               </section>
             )
           })}
@@ -656,11 +592,10 @@ export default function ExportPipelinePage({ theme = 'dark' }) {
         />
       </div>
 
-      <Panel title="수출 진행 현황" right={<span className={`text-xs font-black ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>발주 완료 이상 {confirmedPipelineRows.length}건</span>} theme={theme}>
+      <Panel title="수출 진행 현황" right={<span className="text-xs font-black text-slate-400">발주 완료 이상 {confirmedPipelineRows.length}건</span>}>
         <DataTable
           rows={filteredPipelineRows}
           rowKey={(row) => row.id}
-          theme={theme}
           columns={[
             { key: 'country', label: '국가', render: (row) => displayText(row.country) },
             { key: 'buyer_name', label: '바이어명', render: (row) => displayText(row.buyer_name) },

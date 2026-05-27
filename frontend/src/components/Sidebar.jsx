@@ -4,34 +4,89 @@ const workerMenuItems = [
   { id: 'dashboard', icon: 'dashboard', label: '개요' },
   { id: 'sales', icon: 'leaderboard', label: '매출 현황' },
   { id: 'customers', icon: 'groups', label: '고객 관리', comingSoon: true },
-  { id: 'marketing', icon: 'campaign', label: '마케팅', comingSoon: true },
+  {
+    id: 'sales-ops',
+    icon: 'storefront',
+    label: '영업/운영',
+    children: [
+      { id: 'channel-operations', label: '채널 운영' },
+      { id: 'partners', label: '거래처 관리' },
+      { id: 'export-pipeline', label: '수출 파이프라인' },
+    ],
+  },
+  {
+    id: 'marketing',
+    icon: 'campaign',
+    label: '마케팅',
+    children: [
+      { id: 'marketing-projects', label: '마케팅 프로젝트' },
+      { id: 'marketing-status', label: '마케팅 현황' },
+      { id: 'ad-performance', label: '광고 성과' },
+      { id: 'marketing-agent', label: '마케팅 에이전트' },
+    ],
+  },
   {
     id: 'products',
     icon: 'inventory_2',
     label: '상품 관리',
     children: [
       { id: 'products-inventory', label: '재고 관리' },
+      { id: 'product-movement', label: '제품 출입고' },
+      { id: 'product-forecast', label: '제품별 예상 리스트' },
+      { id: 'production', label: '생산 관리' },
       { id: 'products-costs', label: '비용 관리' },
     ],
   },
 ]
 
 const executiveMenuItems = [
-  { id: 'summary', icon: 'dashboard', label: '경영 요약' },
-  { id: 'cash-flow', icon: 'account_balance_wallet', label: '현금 흐름' },
-  { id: 'product-profit', icon: 'inventory_2', label: '제품 손익' },
-  { id: 'product-forecast', icon: 'trending_up', label: '제품별 예상 리스크' },
-  { id: 'channel-sales', icon: 'leaderboard', label: '채널 매출' },
-  { id: 'consulting-revenue', icon: 'business_center', label: '컨설팅 매출' },
-  { id: 'receivables', icon: 'request_quote', label: '미수금 관리' },
-  { id: 'operating-expenses', icon: 'receipt_long', label: '운영 비용' },
-  { id: 'debts', icon: 'credit_score', label: '대출 / 부채' },
-  { id: 'inventory', icon: 'warehouse', label: '재고 관리' },
-  { id: 'export-pipeline', icon: 'public', label: '수출 파이프라인' },
-  { id: 'marketing-status', icon: 'monitoring', label: '마케팅 현황' },
-  { id: 'ad-performance', icon: 'campaign', label: '광고 성과' },
-  { id: 'partners', icon: 'groups', label: '거래처 관리' },
+  {
+    id: 'executive-common',
+    icon: 'apps',
+    label: '공통 업무',
+    children: [
+      { id: 'platform', label: '업무 홈', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'issue-briefing', label: '실시간 이슈 브리핑', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'channel-sales', label: '채널별 실제 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'work-input', label: '내 업무 입력', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'payment-request', label: '입출금 요청', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'resource-library', label: '자료실', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+    ],
+  },
+  {
+    id: 'executive-finance',
+    icon: 'account_balance_wallet',
+    label: '재무/손익',
+    children: [
+      { id: 'summary', label: '경영 요약', roles: ['EXECUTIVE'] },
+      { id: 'cash-flow', label: '현금 흐름', roles: ['EXECUTIVE'] },
+      { id: 'product-profit', label: '제품 손익', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'consulting-revenue', label: '컨설팅 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'receivables', label: '미수금 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'operating-expenses', label: '운영 비용', roles: ['EXECUTIVE'] },
+      { id: 'debts', label: '대출/부채', roles: ['EXECUTIVE'] },
+    ],
+  },
+  {
+    id: 'executive-admin',
+    icon: 'manage_accounts',
+    label: '관리자 운영',
+    children: [
+      { id: 'work-management', label: '업무 진행 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'payment-approval', label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'channel-credentials', label: '채널 계정 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'customer-db', label: '고객 정보 DB', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'employees', label: '직원 관리', roles: ['EXECUTIVE'] },
+      { id: 'employee-performance', label: '직원 성과 분석', roles: ['EXECUTIVE'] },
+    ],
+  },
 ]
+
+const roleLabels = {
+  EXECUTIVE: '대표/임원',
+  MANAGER: '관리자',
+  EMPLOYEE: '직원',
+}
 
 const themeStyles = {
   light: {
@@ -42,6 +97,8 @@ const themeStyles = {
     iconButton: 'text-slate-500 hover:bg-slate-200 hover:text-slate-900',
     active: 'border border-slate-200 bg-slate-100/95 text-slate-900 shadow-[6px_0_0_0_rgba(15,23,42,0.95)]',
     inactive: 'text-slate-600 hover:bg-slate-100/90 hover:text-slate-900',
+    childActive: 'bg-white text-slate-950 ring-1 ring-slate-200 shadow-sm',
+    childInactive: 'text-slate-600 hover:bg-white/80 hover:text-slate-950',
     disabled: 'cursor-default text-slate-400',
     nestedBorder: 'border-slate-300/70',
     chip: 'bg-slate-200 text-slate-500',
@@ -63,6 +120,8 @@ const themeStyles = {
     iconButton: 'text-slate-400 hover:bg-white/10 hover:text-white',
     active: 'bg-sky-400 text-slate-950 shadow-lg shadow-sky-950/30',
     inactive: 'text-slate-400 hover:bg-white/10 hover:text-white',
+    childActive: 'bg-white/10 text-white ring-1 ring-white/10',
+    childInactive: 'text-slate-400 hover:bg-white/10 hover:text-white',
     disabled: 'cursor-default text-slate-600',
     nestedBorder: 'border-white/10',
     chip: 'bg-white/10 text-slate-400',
@@ -161,6 +220,22 @@ function ThemeSwitch({ theme, isExpanded, onThemeChange, styles }) {
   )
 }
 
+function canSeeItem(item, role) {
+  return !item.roles || item.roles.includes(role || 'EXECUTIVE')
+}
+
+function filterMenuItems(items, role) {
+  return items
+    .map((item) => {
+      if (!item.children) {
+        return canSeeItem(item, role) ? item : null
+      }
+      const children = item.children.filter((child) => canSeeItem(child, role))
+      return children.length > 0 ? { ...item, children } : null
+    })
+    .filter(Boolean)
+}
+
 export default function Sidebar({
   dashboardMode,
   isExpanded,
@@ -171,17 +246,33 @@ export default function Sidebar({
   theme = 'light',
   onThemeChange,
   username,
+  displayName,
+  department,
+  role = 'EXECUTIVE',
   onLogout,
 }) {
-  const [openMenus, setOpenMenus] = useState({ products: true })
+  const [openMenus, setOpenMenus] = useState({
+    'sales-ops': true,
+    marketing: true,
+    products: true,
+    'executive-common': true,
+    'executive-finance': true,
+  })
   const styles = themeStyles[theme] || themeStyles.light
-  const menuItems = dashboardMode === 'executive' ? executiveMenuItems : workerMenuItems
+  const menuItems = dashboardMode === 'executive'
+    ? filterMenuItems(executiveMenuItems, role)
+    : workerMenuItems
   const title = dashboardMode === 'executive' ? '경영인 대시보드' : '실무자 대시보드'
 
-  const productsActive = useMemo(
-    () => activePage === 'products' || activePage === 'products-inventory' || activePage === 'products-costs',
-    [activePage],
-  )
+  const activeParents = useMemo(() => {
+    const set = new Set()
+    menuItems.forEach((item) => {
+      if (item.children?.some((child) => child.id === activePage)) {
+        set.add(item.id)
+      }
+    })
+    return set
+  }, [activePage, menuItems])
 
   const renderMenuItem = (item) => {
     if (!item.children) {
@@ -211,6 +302,8 @@ export default function Sidebar({
       )
     }
 
+    const isParentActive = activeParents.has(item.id)
+
     return (
       <div key={item.id} className="space-y-1">
         <button
@@ -223,7 +316,7 @@ export default function Sidebar({
             setOpenMenus((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
           }}
           className={`flex w-full items-center rounded-xl px-4 py-3 text-sm font-bold transition-colors ${
-            productsActive ? styles.active : styles.inactive
+            isParentActive ? styles.active : styles.inactive
           }`}
         >
           <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>
@@ -248,8 +341,8 @@ export default function Sidebar({
                     event.preventDefault()
                     onNavigate(child.id)
                   }}
-                  className={`block rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
-                    childActive ? styles.active : styles.inactive
+                  className={`block rounded-lg px-3 py-2 text-sm font-bold transition-colors ${
+                    childActive ? styles.childActive : styles.childInactive
                   }`}
                 >
                   {child.label}
@@ -302,15 +395,17 @@ export default function Sidebar({
             href="#"
             onClick={(event) => {
               event.preventDefault()
-              onNavigate('settings')
+              onNavigate(dashboardMode === 'executive' ? 'account' : 'settings')
             }}
             className={`flex items-center rounded-xl px-4 py-3 text-sm font-bold transition-colors ${
               isExpanded ? 'flex-1' : 'justify-center'
-            } ${activePage === 'settings' ? styles.active : styles.inactive}`}
+            } ${(dashboardMode === 'executive' ? activePage === 'account' : activePage === 'settings') ? styles.active : styles.inactive}`}
           >
-            <span className="material-symbols-outlined shrink-0">settings</span>
+            <span className="material-symbols-outlined shrink-0">
+              {dashboardMode === 'executive' ? 'account_circle' : 'settings'}
+            </span>
             <MenuLabel isExpanded={isExpanded} className={isExpanded ? 'ml-3' : ''}>
-              설정
+              {dashboardMode === 'executive' ? '내 계정' : '설정'}
             </MenuLabel>
           </a>
 
@@ -325,12 +420,14 @@ export default function Sidebar({
         <div className={`flex rounded-xl p-3 ${isExpanded ? 'items-center justify-between gap-3' : 'justify-center'} ${styles.userCard}`}>
           <div className="flex min-w-0 items-center gap-3">
             <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black ${styles.userAvatar}`}>
-              {(username || 'A').slice(0, 1).toUpperCase()}
+              {(displayName || username || 'A').slice(0, 1).toUpperCase()}
             </div>
             {isExpanded ? (
               <div className="min-w-0">
-                <p className={`truncate text-xs font-black ${styles.heading}`}>{username || '관리자'}</p>
-                <p className={`text-[11px] font-medium ${styles.helper}`}>추후 권한 기반 전환 예정</p>
+                <p className={`truncate text-xs font-black ${styles.heading}`}>{displayName || username || '관리자'}</p>
+                <p className={`truncate text-[11px] font-medium ${styles.helper}`}>
+                  {department ? `${department} · ${roleLabels[role] || role}` : roleLabels[role] || '권한 확인 중'}
+                </p>
               </div>
             ) : null}
           </div>

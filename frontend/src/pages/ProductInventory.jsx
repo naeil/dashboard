@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { buildApiUrl } from '../api/apiBase'
 import { getAuthToken } from '../api/authApi'
 import { getBrands, getInventoryAlerts, getProductInventory, updateProductSafeStock } from '../api/salesApi'
+import InventoryRiskPage from './executive/InventoryRiskPage'
 
 function formatNumber(value) {
   return Number(value ?? 0).toLocaleString('ko-KR')
@@ -11,6 +12,11 @@ function getCurrentMonth() {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
+
+const INVENTORY_TABS = [
+  { id: 'operations', label: '운영 재고' },
+  { id: 'risk', label: '재고 리스크' },
+]
 
 function SummaryCard({ label, value }) {
   return (
@@ -32,7 +38,24 @@ function isLowStock(item) {
 }
 
 function FloatingAlertPanel({ alerts }) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
+  const [selectedBrand, setSelectedBrand] = useState('ALL')
+
+  // 브랜드 탭 목록 동적 생성 (hook은 조건문 앞에 위치해야 함)
+  const brands = useMemo(() => {
+    const seen = new Map()
+    alerts.forEach((a) => {
+      const key = String(a.brandId ?? a.brandName ?? '')
+      if (key && !seen.has(key)) seen.set(key, a.brandName)
+    })
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
+  }, [alerts])
+
+  const tabs = [{ id: 'ALL', name: '전체' }, ...brands]
+
+  const visibleAlerts = selectedBrand === 'ALL'
+    ? alerts
+    : alerts.filter((a) => String(a.brandId ?? a.brandName ?? '') === selectedBrand)
 
   if (alerts.length === 0) return null
 
@@ -60,15 +83,13 @@ function FloatingAlertPanel({ alerts }) {
 
   return (
     <div className="fixed bottom-6 right-6 z-40 w-[min(24rem,calc(100vw-2rem))] rounded-3xl border border-amber-200 bg-white/95 p-5 shadow-2xl backdrop-blur">
+      {/* 헤더 */}
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-500">Inventory Alert</p>
-          <h3 className="mt-2 text-lg font-black text-slate-900">안전재고 이하 상품 {alerts.length}건</h3>
+          <h3 className="mt-2 text-lg font-black text-slate-900">안전재고 이하 {alerts.length}건</h3>
         </div>
         <div className="flex items-center gap-2">
-          <div className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
-            빠른 보충이 필요합니다
-          </div>
           <button
             type="button"
             onClick={() => setIsCollapsed(true)}
@@ -82,27 +103,112 @@ function FloatingAlertPanel({ alerts }) {
         </div>
       </div>
 
-      <div className="mt-4 space-y-3">
-        {alerts.slice(0, 4).map((alert) => (
-          <div key={alert.alertId} className="rounded-2xl bg-amber-50 px-4 py-3">
-            <p className="text-sm font-bold text-slate-900">{alert.productName}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {alert.brandName} / {alert.skuCd || 'SKU 미등록'}
-            </p>
-            <p className="mt-2 text-sm font-semibold text-amber-700">
-              현재 재고 {formatNumber(alert.realStock)} / 안전재고 {formatNumber(alert.safeStock)}
-            </p>
-          </div>
-        ))}
+      {/* 브랜드 탭 */}
+      {brands.length >= 1 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {tabs.map((tab) => {
+            const count = tab.id === 'ALL'
+              ? alerts.length
+              : alerts.filter((a) => String(a.brandId ?? a.brandName ?? '') === tab.id).length
+            const active = selectedBrand === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedBrand(tab.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
+                  active
+                    ? 'border-amber-300 bg-amber-100 text-amber-800'
+                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                }`}
+              >
+                {tab.name}
+                <span className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-black ${
+                  active ? 'bg-amber-800 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* 알림 목록 */}
+      <div className="mt-3 max-h-72 space-y-3 overflow-y-auto pr-0.5">
+        {visibleAlerts.length === 0 ? (
+          <p className="py-4 text-center text-xs text-slate-400">해당 브랜드의 알림이 없습니다.</p>
+        ) : (
+          visibleAlerts.map((alert) => (
+            <div key={alert.alertId} className="rounded-2xl bg-amber-50 px-4 py-3">
+              <p className="text-sm font-bold text-slate-900">{alert.productName}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {alert.brandName} / {alert.skuCd || 'SKU 미등록'}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-amber-700">
+                현재 재고 {formatNumber(alert.realStock)} / 안전재고 {formatNumber(alert.safeStock)}
+              </p>
+            </div>
+          ))
+        )}
       </div>
     </div>
   )
 }
 
-export default function ProductInventory({ isExpanded }) {
+function BrandFilterTabs({ brands, items, selectedBrand, onSelect }) {
+  const countByBrand = useMemo(() => {
+    const next = new Map()
+    items.forEach((item) => {
+      const key = String(item.brandId ?? '')
+      if (!key) return
+      next.set(key, (next.get(key) || 0) + 1)
+    })
+    return next
+  }, [items])
+
+  const tabs = [
+    { id: 'ALL', label: '전체', count: items.length },
+    ...brands.map((brand) => ({
+      id: String(brand.brandId),
+      label: brand.brandName,
+      count: countByBrand.get(String(brand.brandId)) || 0,
+    })),
+  ]
+
+  return (
+    <div className="mb-8 flex flex-wrap gap-3">
+      {tabs.map((tab) => {
+        const active = selectedBrand === tab.id
+
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onSelect(tab.id)}
+            className={`inline-flex h-11 items-center gap-3 rounded-xl border px-5 text-sm font-black transition-colors ${
+              active
+                ? 'border-sky-300 bg-sky-100 text-sky-700 shadow-sm'
+                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <span>{tab.label}</span>
+            <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-black ${
+              active ? 'bg-white text-sky-800' : 'bg-slate-50 text-slate-500'
+            }`}>
+              {formatNumber(tab.count)}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export default function ProductInventory({ isExpanded, theme = 'light' }) {
   const [companyId] = useState(1)
+  const selectedMonth = getCurrentMonth()
   const [selectedBrand, setSelectedBrand] = useState('ALL')
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth)
   const [brands, setBrands] = useState([])
   const [items, setItems] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -110,15 +216,14 @@ export default function ProductInventory({ isExpanded }) {
   const [editingProductId, setEditingProductId] = useState(null)
   const [safeStockInput, setSafeStockInput] = useState('')
   const [savingSafeStock, setSavingSafeStock] = useState(false)
-
-  const brandId = selectedBrand === 'ALL' ? null : Number(selectedBrand)
+  const [activeTab, setActiveTab] = useState('operations')
 
   const loadInventoryPage = async () => {
     try {
       setLoading(true)
       const [inventoryResponse, alertsResponse] = await Promise.all([
-        getProductInventory(companyId, brandId, selectedMonth),
-        getInventoryAlerts(companyId, brandId),
+        getProductInventory(companyId, null, selectedMonth),
+        getInventoryAlerts(companyId),
       ])
 
       setItems(inventoryResponse.data || [])
@@ -131,6 +236,10 @@ export default function ProductInventory({ isExpanded }) {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadInventoryPage()
+  }, [companyId, selectedMonth])
 
   useEffect(() => {
     const fetchBrands = async () => {
@@ -147,10 +256,6 @@ export default function ProductInventory({ isExpanded }) {
   }, [companyId])
 
   useEffect(() => {
-    loadInventoryPage()
-  }, [companyId, selectedBrand, selectedMonth])
-
-  useEffect(() => {
     const token = getAuthToken()
     if (!token) return undefined
 
@@ -158,10 +263,6 @@ export default function ProductInventory({ isExpanded }) {
       companyId: String(companyId),
       token,
     })
-
-    if (brandId) {
-      params.set('brandId', String(brandId))
-    }
 
     const eventSource = new EventSource(`${buildApiUrl('/products/inventory/alerts/stream')}?${params.toString()}`)
 
@@ -181,16 +282,28 @@ export default function ProductInventory({ isExpanded }) {
     return () => {
       eventSource.close()
     }
-  }, [companyId, brandId])
+  }, [companyId])
+
+  const filteredItems = useMemo(() => (
+    selectedBrand === 'ALL'
+      ? items
+      : items.filter((item) => String(item.brandId ?? '') === selectedBrand)
+  ), [items, selectedBrand])
+
+  const filteredAlerts = useMemo(() => (
+    selectedBrand === 'ALL'
+      ? alerts
+      : alerts.filter((alert) => String(alert.brandId ?? '') === selectedBrand)
+  ), [alerts, selectedBrand])
 
   const summary = useMemo(() => {
-    const totalProducts = items.length
-    const totalStock = items.reduce((sum, item) => sum + Number(item.realStock ?? 0), 0)
-    const totalSafeStock = items.reduce((sum, item) => sum + Number(item.safeStock ?? 0), 0)
-    const totalMonthlyOutbound = items.reduce((sum, item) => sum + Number(item.monthlyOutboundCount ?? 0), 0)
+    const totalProducts = filteredItems.length
+    const totalStock = filteredItems.reduce((sum, item) => sum + Number(item.realStock ?? 0), 0)
+    const totalSafeStock = filteredItems.reduce((sum, item) => sum + Number(item.safeStock ?? 0), 0)
+    const totalMonthlyOutbound = filteredItems.reduce((sum, item) => sum + Number(item.monthlyOutboundCount ?? 0), 0)
 
     return { totalProducts, totalStock, totalSafeStock, totalMonthlyOutbound }
-  }, [items])
+  }, [filteredItems])
 
   const startEditing = (item) => {
     setEditingProductId(item.productId)
@@ -227,61 +340,44 @@ export default function ProductInventory({ isExpanded }) {
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">재고 관리</h1>
           <p className="mt-3 text-slate-500">현재 재고, 안전재고, 출고 현황을 한 화면에서 확인하고 안전재고 알림을 관리합니다.</p>
         </div>
-
-        <div className="inline-block rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <div className="flex flex-col gap-6 text-left lg:flex-row lg:items-start">
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                브랜드 선택
-              </label>
-              <div className="relative min-w-[14rem] overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors focus-within:border-primary">
-                <select
-                  value={selectedBrand}
-                  onChange={(e) => setSelectedBrand(e.target.value)}
-                  className="w-full appearance-none cursor-pointer border-none bg-transparent py-2 pl-3 pr-12 text-sm font-semibold text-slate-700 outline-none"
-                >
-                  <option value="ALL">전체 브랜드</option>
-                  {brands.map((brand) => (
-                    <option key={brand.brandId} value={brand.brandId}>
-                      {brand.brandName}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
-                  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4" fill="none">
-                    <path
-                      d="M3.5 6L8 10.5L12.5 6"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                기준 월
-              </label>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="w-full cursor-pointer rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-primary"
-              />
-            </div>
-          </div>
-        </div>
       </div>
+
+      <div className="mb-8 inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+        {INVENTORY_TABS.map((tab) => {
+          const active = activeTab === tab.id
+
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`h-11 rounded-xl px-5 text-sm font-black transition-colors ${
+                active
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeTab === 'operations' ? (
+      <>
+      <BrandFilterTabs
+        brands={brands}
+        items={items}
+        selectedBrand={selectedBrand}
+        onSelect={setSelectedBrand}
+      />
 
       <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-5">
         <SummaryCard label="등록 상품 수" value={formatNumber(summary.totalProducts)} />
         <SummaryCard label="현재 재고 합계" value={formatNumber(summary.totalStock)} />
         <SummaryCard label="안전재고 합계" value={formatNumber(summary.totalSafeStock)} />
         <SummaryCard label={`${selectedMonth} 월 출고량`} value={formatNumber(summary.totalMonthlyOutbound)} />
-        <SummaryCard label="안전재고 알림" value={formatNumber(alerts.length)} />
+        <SummaryCard label="안전재고 알림" value={formatNumber(filteredAlerts.length)} />
       </div>
 
       <section className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-sm">
@@ -296,7 +392,7 @@ export default function ProductInventory({ isExpanded }) {
 
         {loading ? (
           <div className="px-8 py-16 text-center text-slate-500">재고 데이터를 불러오는 중입니다...</div>
-        ) : items.length === 0 ? (
+        ) : filteredItems.length === 0 ? (
           <div className="px-8 py-16 text-center text-slate-500">선택한 조건에 해당하는 재고 데이터가 없습니다.</div>
         ) : (
           <div className="w-full overflow-x-auto">
@@ -314,7 +410,7 @@ export default function ProductInventory({ isExpanded }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {items.map((item) => {
+                {filteredItems.map((item) => {
                   const lowStock = isLowStock(item)
                   const isEditing = editingProductId === item.productId
 
@@ -401,7 +497,13 @@ export default function ProductInventory({ isExpanded }) {
         )}
       </section>
 
-      <FloatingAlertPanel alerts={alerts} />
+      <FloatingAlertPanel alerts={filteredAlerts} />
+      </>
+      ) : (
+        <div className={theme === 'dark' ? '' : 'app-light'}>
+          <InventoryRiskPage />
+        </div>
+      )}
     </main>
   )
 }

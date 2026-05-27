@@ -32,8 +32,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         FROM Product p
         JOIN Brand b ON b.id = p.brandId
         WHERE p.companyId = :companyId
-          AND p.realStock > 0
+          AND p.realStock >= 0
           AND b.brandName <> '\uBBF8\uBD84\uB958'
+          AND p.productName NOT LIKE '[\uC0D8\uD50C]%'
           AND (:brandId IS NULL OR p.brandId = :brandId)
         ORDER BY b.brandName ASC, p.productName ASC
         """)

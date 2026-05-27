@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getExecutiveProductProfits, updateExecutiveRecord } from '../../api/executiveApi'
-import { DataTable, KpiCard, PageHeader, Panel, StatusBadge } from './ExecutiveComponents'
+import { DataTable, KpiCard, Panel, StatusBadge } from './ExecutiveComponents'
 import { count, won } from './formatters'
 
 const BRAND_CATEGORIES = ['하이프리', '국민한상']
@@ -147,8 +147,6 @@ export default function InventoryRiskPage() {
 
   return (
     <>
-      <PageHeader title="재고 관리" description="하이프리와 국민한상 카테고리별 재고 평가 금액, 안전재고 미달, 과다 재고를 확인합니다." />
-
       <CategoryTabs selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} rows={rows} />
 
       <QuickStockEditor
@@ -173,6 +171,11 @@ export default function InventoryRiskPage() {
           rows={filteredRows}
           rowKey={(row) => row.id}
           columns={[
+            { key: 'brand_name', label: '브랜드', render: (row) => (
+              <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                {row.brand_name || row.category || '-'}
+              </span>
+            ) },
             { key: 'category', label: '카테고리' },
             { key: 'product_name', label: '제품명', render: (row) => (
               <button
@@ -202,6 +205,14 @@ export default function InventoryRiskPage() {
             { key: 'supplied_materials', label: '사급원료' },
             { key: 'issue_text', label: '이슈' },
             { key: 'status', label: '상태', render: (row) => <StatusBadge value={row.status} /> },
+          ]}
+          defaultSort="stockDesc"
+          sortOptions={[
+            { id: 'stockDesc', label: '재고 많은 순', key: 'stock_quantity' },
+            { id: 'stockAsc', label: '재고 적은 순', key: 'stock_quantity', direction: 'asc' },
+            { id: 'valueDesc', label: '재고 평가금액 높은 순', value: (row) => Number(row.production_cost || 0) * Number(row.stock_quantity || 0) },
+            { id: 'safeGapAsc', label: '안전재고 부족 순', value: (row) => Number(row.stock_quantity || 0) - Number(row.safe_stock || 3000), direction: 'asc' },
+            { id: 'expiryAsc', label: '유통기한 임박 순', key: 'expiry_date', type: 'date', direction: 'asc' },
           ]}
         />
       </Panel>
